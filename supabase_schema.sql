@@ -18,6 +18,7 @@ drop table if exists public.batches cascade;
 drop table if exists public.courses cascade;
 drop table if exists public.wallets cascade;
 drop table if exists public.profiles cascade;
+drop table if exists public.team_meetings cascade;
 
 -- Enable UUID extension if not enabled
 create extension if not exists "uuid-ossp";
