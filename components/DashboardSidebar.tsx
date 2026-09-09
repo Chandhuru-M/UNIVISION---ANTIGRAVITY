@@ -55,23 +55,19 @@ export default function DashboardSidebar({
           {
             title: 'OVERVIEW',
             items: [
-              { name: 'Dashboard', icon: LayoutGrid, tabKey: 'analytics' },
-              { name: 'Revenue', icon: TrendingUp, tabKey: 'analytics' }
+              { name: 'Dashboard Overview', icon: LayoutGrid, tabKey: 'analytics' }
             ]
           },
           {
             title: 'COURSES',
             items: [
-              { name: 'All courses', icon: BookOpen, tabKey: 'courses' },
-              { name: 'Categories', icon: Layers, tabKey: 'courses' },
-              { name: 'Revisit stats', icon: Eye, tabKey: 'analytics' }
+              { name: 'Courses & Batches', icon: BookOpen, tabKey: 'courses' }
             ]
           },
           {
             title: 'PEOPLE',
             items: [
-              { name: 'Mentors', icon: Users, tabKey: 'users' },
-              { name: 'Students', icon: GraduationCap, tabKey: 'users' },
+              { name: 'People', icon: Users, tabKey: 'users' },
               { name: 'Core Team', icon: UserSquare2, tabKey: 'core_team' }
             ]
           },
@@ -122,14 +118,8 @@ export default function DashboardSidebar({
           {
             title: 'OVERVIEW',
             items: [
-              { name: 'Dashboard', icon: LayoutGrid, tabKey: 'workspace' }
-            ]
-          },
-          {
-            title: 'FINANCE',
-            items: [
-              { name: 'Wallets', icon: Wallet, tabKey: 'workspace' },
-              { name: 'Referrals', icon: Gift, tabKey: 'workspace' }
+              { name: 'Student Dashboard', icon: LayoutGrid, tabKey: 'dashboard' },
+              { name: 'My Courses', icon: BookOpen, tabKey: 'courses' }
             ]
           }
         ];
@@ -137,50 +127,33 @@ export default function DashboardSidebar({
   };
 
   const categories = getCategories();
+  const allItems = categories.flatMap(c => c.items);
 
   return (
-    <aside className="w-64 bg-[#0a0a0c] border-r border-border min-h-screen flex flex-col justify-between shrink-0 text-left">
-      <div className="p-6 space-y-8">
-        {/* Brand Heading */}
-        <div className="flex items-center justify-between">
-          <LinkNext href="/" className="flex items-center gap-1.5 group">
-            <span className="text-xl font-extrabold tracking-tight text-white group-hover:text-primary transition-colors">
-              Univision<span className="text-blue-500">.</span>
-            </span>
-          </LinkNext>
-        </div>
-
-        {/* Navigation Categories */}
-        <div className="space-y-6">
-          {categories.map((cat, catIdx) => (
-            <div key={catIdx} className="space-y-2">
-              <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest block px-3">
-                {cat.title}
-              </span>
-              <ul className="space-y-1">
-                {cat.items.map((item, itemIdx) => {
-                  const isActive = currentTab === item.tabKey;
-                  const Icon = item.icon;
-                  return (
-                    <li key={itemIdx}>
-                      <button
-                        onClick={() => onTabChange(item.tabKey)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
-                          isActive 
-                            ? 'bg-blue-600/10 text-blue-550 dark:text-blue-400 font-bold' 
-                            : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
-                        }`}
-                      >
-                        <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? 'text-blue-500' : 'text-muted-foreground'}`} />
-                        <span>{item.name}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
-        </div>
+    <aside className="w-64 bg-card border-r border-border min-h-screen flex flex-col justify-between shrink-0 text-left transition-colors">
+      <div className="p-4 space-y-4">
+        {/* Navigation Items - Uniform Spacing */}
+        <ul className="space-y-2">
+          {allItems.map((item, itemIdx) => {
+            const isActive = currentTab === item.tabKey;
+            const Icon = item.icon;
+            return (
+              <li key={itemIdx}>
+                <button
+                  onClick={() => onTabChange(item.tabKey)}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
+                    isActive 
+                      ? 'bg-blue-600/10 text-blue-600 dark:text-blue-400 font-bold' 
+                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+                  }`}
+                >
+                  <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'}`} />
+                  <span>{item.name}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
       {/* User Footer Profile & Logout */}

@@ -177,7 +177,7 @@ export default function MentorDashboard() {
       />
 
       {/* Main Workspace Column */}
-      <main className="flex-1 bg-[#09090b] min-h-screen p-8 text-left overflow-y-auto space-y-8">
+      <main className="flex-1 bg-background min-h-screen p-6 text-left overflow-y-auto space-y-6 transition-colors">
         
         {/* Top Header */}
         <div className="flex justify-between items-center pb-4 border-b border-border">

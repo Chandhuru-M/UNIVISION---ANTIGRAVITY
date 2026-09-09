@@ -481,12 +481,12 @@ export default function AdminDashboard() {
       />
 
       {/* Main Workspace Column */}
-      <main className="flex-1 bg-[#09090b] min-h-screen p-8 text-left overflow-y-auto space-y-8">
+      <main className="flex-1 bg-background min-h-screen p-6 text-left overflow-y-auto space-y-6 transition-colors">
         
         {/* Top Header */}
         <div className="flex justify-between items-center pb-4 border-b border-border">
           <div>
-            <h1 className="text-xl font-extrabold text-white uppercase tracking-wider">
+            <h1 className="text-xl font-extrabold text-foreground uppercase tracking-wider">
               {activeTab === 'analytics' ? 'Dashboard Overview' : 
                activeTab === 'verifications' ? 'Verify Payments' : 
                activeTab === 'redeem' ? 'Redeem Requests' : 
@@ -497,11 +497,11 @@ export default function AdminDashboard() {
           </div>
           <div className="flex items-center gap-4">
             {pendingRedemptions.length > 0 && (
-              <span className="px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-bold rounded-full animate-pulse">
+              <span className="px-2.5 py-1 bg-red-500/10 text-red-500 border border-red-500/20 text-[10px] font-bold rounded-full animate-pulse">
                 {pendingRedemptions.length} redeem pending
               </span>
             )}
-            <div className="h-9 w-9 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 font-bold flex items-center justify-center text-xs">
+            <div className="h-9 w-9 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-500 font-bold flex items-center justify-center text-xs">
               AD
             </div>
           </div>
@@ -510,8 +510,8 @@ export default function AdminDashboard() {
         {message && (
           <div className={`p-4 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
             message.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-              : 'bg-red-500/10 border-red-500/20 text-red-400'
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+              : 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
           }`}>
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{message.text}</span>
@@ -523,14 +523,14 @@ export default function AdminDashboard() {
           <div className="space-y-6">
             
             {/* Top Course/Batch Filters */}
-            <div className="p-6 bg-zinc-900 rounded-3xl border border-zinc-850 flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="p-6 bg-card rounded-3xl border border-border flex flex-col sm:flex-row gap-4 items-center justify-between">
               <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
                 <div className="space-y-1 w-full sm:w-60">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Select Course</label>
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Select Course</label>
                   <select
                     value={selectedCourseId}
                     onChange={(e) => setSelectedCourseId(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
+                    className="w-full bg-background border border-input rounded-xl py-2 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   >
                     {courses.map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
@@ -539,11 +539,11 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="space-y-1 w-full sm:w-48">
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Select Batch</label>
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Select Batch</label>
                   <select
                     value={selectedBatchId}
                     onChange={(e) => setSelectedBatchId(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
+                    className="w-full bg-background border border-input rounded-xl py-2 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   >
                     {batches.filter(b => b.course_id === selectedCourseId).map(b => (
                       <option key={b.id} value={b.id}>{b.name}</option>
@@ -558,7 +558,7 @@ export default function AdminDashboard() {
               {filteredBatch && roster.length > 0 && (
                 <button
                   onClick={handleExportCSV}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0 w-full sm:w-auto justify-center"
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0 w-full sm:w-auto justify-center shadow-sm"
                 >
                   <FileSpreadsheet className="h-4 w-4" />
                   Export to CSV
@@ -568,61 +568,61 @@ export default function AdminDashboard() {
 
             {/* KPI Analytics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-6 bg-zinc-900 rounded-3xl border border-zinc-850 space-y-2">
-                <div className="flex justify-between items-center text-zinc-400">
+              <div className="p-6 bg-card rounded-3xl border border-border space-y-2">
+                <div className="flex justify-between items-center text-muted-foreground">
                   <span className="text-xs font-bold">Total Enrollments</span>
                   <Users className="h-4 w-4 text-blue-500" />
                 </div>
-                <p className="text-3xl font-black text-white">{stats.totalEnrolled}</p>
-                <p className="text-[10px] text-zinc-500">Paid and active student profiles</p>
+                <p className="text-3xl font-black text-foreground">{stats.totalEnrolled}</p>
+                <p className="text-[10px] text-muted-foreground">Paid and active student profiles</p>
               </div>
 
-              <div className="p-6 bg-zinc-900 rounded-3xl border border-zinc-850 space-y-2">
-                <div className="flex justify-between items-center text-zinc-400">
+              <div className="p-6 bg-card rounded-3xl border border-border space-y-2">
+                <div className="flex justify-between items-center text-muted-foreground">
                   <span className="text-xs font-bold">Referred Bookings</span>
                   <Gift className="h-4 w-4 text-emerald-500" />
                 </div>
-                <p className="text-3xl font-black text-white">{stats.totalReferrals}</p>
-                <p className="text-[10px] text-zinc-500">Enrollments using referral ID</p>
+                <p className="text-3xl font-black text-foreground">{stats.totalReferrals}</p>
+                <p className="text-[10px] text-muted-foreground">Enrollments using referral ID</p>
               </div>
 
-              <div className="p-6 bg-zinc-900 rounded-3xl border border-zinc-850 space-y-2">
-                <div className="flex justify-between items-center text-zinc-400">
+              <div className="p-6 bg-card rounded-3xl border border-border space-y-2">
+                <div className="flex justify-between items-center text-muted-foreground">
                   <span className="text-xs font-bold">Total Revenue</span>
                   <DollarSign className="h-4 w-4 text-blue-500" />
                 </div>
-                <p className="text-3xl font-black text-white">₹{stats.totalRevenue.toFixed(2)}</p>
-                <p className="text-[10px] text-zinc-500">Based on amount paid</p>
+                <p className="text-3xl font-black text-foreground">₹{stats.totalRevenue.toFixed(2)}</p>
+                <p className="text-[10px] text-muted-foreground">Based on amount paid</p>
               </div>
             </div>
 
             {/* Visual Charts Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider pl-1">Monthly Revenue Trend</h3>
+                <h3 className="text-xs font-bold text-foreground uppercase tracking-wider pl-1">Monthly Revenue Trend</h3>
                 <BarChart data={getBarChartData()} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider pl-1">Enrollments by Course Cohort</h3>
+                <h3 className="text-xs font-bold text-foreground uppercase tracking-wider pl-1">Enrollments by Course Cohort</h3>
                 <DonutChart segments={getDonutSegments()} />
               </div>
             </div>
 
             {/* Selected Course Specs */}
             {filteredCourse && (
-              <div className="p-6 bg-zinc-900/60 rounded-3xl border border-zinc-850 space-y-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider text-zinc-450">Active Course Specifications</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-semibold text-zinc-400">
+              <div className="p-6 bg-card rounded-3xl border border-border space-y-4">
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">Active Course Specifications</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-semibold text-muted-foreground">
                   <div>
-                    <span className="text-[10px] text-zinc-500 block">Course Fee</span>
-                    <span className="text-white">₹{filteredCourse.fees}</span>
+                    <span className="text-[10px] text-muted-foreground block">Course Fee</span>
+                    <span className="text-foreground font-bold">₹{filteredCourse.fees}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-zinc-500 block">Duration</span>
-                    <span className="text-white">{filteredCourse.duration}</span>
+                    <span className="text-[10px] text-muted-foreground block">Duration</span>
+                    <span className="text-foreground font-bold">{filteredCourse.duration}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-zinc-500 block">Lectures count</span>
+                    <span className="text-[10px] text-muted-foreground block">Lectures count</span>
                     <span className="text-white">{filteredCourse.class_count} classes</span>
                   </div>
                   <div>

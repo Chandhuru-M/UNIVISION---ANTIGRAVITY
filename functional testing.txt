@@ -1,0 +1,153 @@
+# Functional Test Cases: Univision LMS & Referral Platform
+
+This test suite covers the validation of all core features of the system. You can execute these test cases to verify the correctness of the database, triggers, and UI logic.
+
+---
+
+## 1. Authentication & Role-Based Approval Flow
+
+### TC-1.01: Core Member Registration & Pending Isolation
+- **Goal**: Verify that new Core Members are registered as `pending` and blocked from logging in.
+- **Steps**:
+  1. Go to the Sign Up screen.
+  2. Register a new user with the **Core Member** role.
+  3. Attempt to sign in immediately with the registered credentials.
+- **Expected Outcome**: 
+  - The profile is created in the database with `status = 'pending'`.
+  - Authentication fails with an error notification: *"Your core member registration is pending administrator approval."*
+
+### TC-1.02: Admin Core Member Approval
+- **Goal**: Verify the admin can approve a pending Core Member.
+- **Steps**:
+  1. Log in as an **Admin** user.
+  2. Navigate to the **Core Team** tab on the sidebar.
+  3. Find the pending core member registered in TC-1.01.
+  4. Click the **Approve** button.
+  5. Log out, then log in as the approved Core Member.
+- **Expected Outcome**:
+  - The core member's status changes to `approved` in the database.
+  - The Core Member successfully signs in and accesses the Core Member Dashboard.
+
+---
+
+## 2. Referral & Wallet Cashback Rewards
+
+### TC-2.01: Student Referral Reward Calculation (12.5% Cashback)
+- **Goal**: Verify that a student referrer gets 12.5% cashback when a referred friend completes payment.
+- **Steps**:
+  1. Log in as **Student A** and copy the Referral Code (e.g. `REF-A1B2C3D4`).
+  2. Register **Student B** using Student A's referral code.
+  3. Log in as **Student B**, choose a course costing **₹10,000**, input a fake transaction ID, and enroll.
+  4. Log in as **Admin**, navigate to the **Verify Payments** tab, and approve Student B's enrollment.
+  5. Log in as **Student A** (the referrer) and check the Wallet Balance.
+- **Expected Outcome**:
+  - Student A's wallet balance increases by **₹1,250** (12.5% of ₹10,000).
+
+### TC-2.02: Student Cumulative Wallet Cap (50% Fee Limit)
+- **Goal**: Enforce wallet capping rules (balance + approved redemptions cannot exceed 50% of the referrer's paid fees).
+- **Steps**:
+  1. Ensure **Student A** (the referrer) has purchased only **one course costing ₹6,000** (max reward cap = ₹3,000).
+  2. Refer **Student C** who registers and completes payment for a course costing **₹20,000** (12.5% reward = ₹2,500). Wallet balance becomes **₹2,500**.
+  3. Refer **Student D** who registers and completes payment for a course costing **₹10,000** (12.5% reward = ₹1,250).
+  4. Check Student A's Wallet.
+- **Expected Outcome**:
+  - The reward from Student D is capped. Instead of adding ₹1,250, only **₹500** is added to top off the wallet to the **₹3,000 cap** (50% of their ₹6,000 paid fee).
+
+### TC-2.03: Capped Referrals Do Not Block Future Friends
+- **Goal**: Confirm referrals are not blocked when the cap is reached.
+- **Steps**:
+  1. Keep **Student A**'s wallet at the 50% cap.
+  2. Register **Student E** using Student A's referral code.
+- **Expected Outcome**:
+  - Registration is successful. Student E can book and study courses without issues. Student A's wallet remains at the cap without receiving further rewards.
+
+### TC-2.04: Core Member Unlimited Reward (10% flat)
+- **Goal**: Verify Core Members earn a flat 10% reward without a 50% cumulative cap.
+- **Steps**:
+  1. Log in as approved **Core Member X** and share their referral code.
+  2. Register **Student F** using Core Member X's referral code.
+  3. Complete Student F's enrollment for a course of **₹12,000**.
+  4. Verify Core Member X's Wallet.
+- **Expected Outcome**:
+  - Core Member X receives exactly **₹1,200** (10% of ₹12,000) regardless of whether Core Member X has enrolled in any courses themselves.
+
+---
+
+## 3. Referral Anti-Fraud & Integrity Engine
+
+### TC-3.01: Self-Referral Prevention
+- **Goal**: Enforce block on self-referrals.
+- **Steps**:
+  1. Register a new user using their own referral code as the referrer code.
+- **Expected Outcome**:
+  - Registration/referral assignment is rejected by the system.
+
+### TC-3.02: Strategy A - Chronological Constraint Verification
+- **Goal**: Verify referees cannot be created before referrers.
+- **Steps**:
+  1. Try to manually insert a database profile where the referrer's account `created_at` timestamp is newer/later than the referee's `created_at` timestamp.
+- **Expected Outcome**:
+  - The trigger `check_profiles_referral_trg` rejects the operation with an exception: *'Invalid referral link: violates chronological order or forms a cycle'*.
+
+### TC-3.03: Strategy B - First-time Buyer Limit Lock
+- **Goal**: Block rewards for referrals on non-first-time enrollments.
+- **Steps**:
+  1. Register **Student G** (already purchased course 1 without any referral code).
+  2. Student G decides to enroll in course 2 using **Student A's** referral code.
+- **Expected Outcome**:
+  - The trigger `check_enrollments_referral_trg` blocks the enrollment update or raises an error: *'Referral reward is locked to first-time buyers only'*.
+
+### TC-3.04: Strategy C - Circular Cycle Loop Detection
+- **Goal**: Enforce circular loop checks (A referrals -> B referrals -> A).
+- **Steps**:
+  1. **Student A** refers **Student B** (A -> B).
+  2. Attempt to update Student A's profile to be referred by **Student B** (B -> A).
+- **Expected Outcome**:
+  - The relational cycle prevention algorithm rejects the reference and logs a cycle violation error.
+
+---
+
+## 4. Redemptions & Cashout Wallet Flow
+
+### TC-4.01: Wallet Cashout Request
+- **Goal**: Verify students can request to redeem their wallet balances.
+- **Steps**:
+  1. Log in as **Student A** with a wallet balance of **₹3,000**.
+  2. Input a GPay/PhonePe number and click **Redeem Cashout**.
+- **Expected Outcome**:
+  - A pending redemption log is created.
+  - The student cannot submit another cashout request while one is pending.
+
+### TC-4.02: Admin Approval & Wallet Reset
+- **Goal**: Verify admin approval resets the student's wallet balance.
+- **Steps**:
+  1. Log in as **Admin**.
+  2. Navigate to **Redeem Requests** tab.
+  3. Locate Student A's pending request and click **Approve**.
+  4. Log in as **Student A** and inspect the wallet.
+- **Expected Outcome**:
+  - The redemption status updates to `approved`.
+  - Student A's wallet balance resets to **₹0.00**.
+
+---
+
+## 5. Google Meet Link Management
+
+### TC-5.01: Mentor Course Meet Link Update
+- **Goal**: Confirm mentors can only modify meet links for the courses they teach.
+- **Steps**:
+  1. Log in as a **Mentor** specializing in UI/UX.
+  2. Locate the UI Batch 1 card on the dashboard.
+  3. Click **Edit Link**, change the meet URL, and save.
+- **Expected Outcome**:
+  - The Google Meet link updates successfully.
+  - The mentor cannot view or edit links for courses outside their specialization (e.g. Full-Stack Web Development).
+
+### TC-5.02: Admin Global Meet Link Override
+- **Goal**: Confirm admins can view and override all Google Meet links globally.
+- **Steps**:
+  1. Log in as **Admin**.
+  2. Navigate to **Courses & Batches** tab.
+  3. Select any batch, change the Meet Link, and click save.
+- **Expected Outcome**:
+  - The link is updated successfully for any batch in any course.
