@@ -320,34 +320,34 @@ export const db = {
 
   // --- Profiles & Authentication ---
   async getProfiles(): Promise<Profile[]> {
+    let dbProfiles: Profile[] = [];
     if (supabase) {
-      const { data, error } = await supabase.from('profiles').select('*');
-      if (!error && data) return data as Profile[];
-      console.error('Supabase getProfiles error:', error);
+      try {
+        const { data, error } = await supabase.from('profiles').select('*');
+        if (!error && data) dbProfiles = data as Profile[];
+      } catch (e) {
+        console.error('Supabase getProfiles error:', e);
+      }
     }
     const students = getLocalStorage<Profile[]>('univision_students_profiles', []);
     const mentors = getLocalStorage<Profile[]>('univision_mentors_profiles', INITIAL_MENTORS);
     const admins = getLocalStorage<Profile[]>('univision_admins_profiles', INITIAL_ADMINS);
     const cores = getLocalStorage<Profile[]>('univision_cores_profiles', []);
-    return [...students, ...mentors, ...admins, ...cores];
+    const localProfiles = [...students, ...mentors, ...admins, ...cores];
+
+    const map = new Map<string, Profile>();
+    localProfiles.forEach(p => map.set(p.id, p));
+    dbProfiles.forEach(p => map.set(p.id, p));
+
+    return Array.from(map.values());
   },
 
   async getProfile(id: string): Promise<Profile | null> {
-    if (supabase) {
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single();
-      if (!error && data) return data as Profile;
-      console.error('Supabase getProfile error:', error);
-    }
     const profiles = await this.getProfiles();
     return profiles.find(p => p.id === id) || null;
   },
 
   async getProfileByReferralCode(code: string): Promise<Profile | null> {
-    if (supabase) {
-      const { data, error } = await supabase.from('profiles').select('*').eq('referral_code', code).single();
-      if (!error && data) return data as Profile;
-      console.error('Supabase getProfileByReferralCode error:', error);
-    }
     const profiles = await this.getProfiles();
     return profiles.find(p => p.referral_code?.toUpperCase() === code.toUpperCase()) || null;
   },
@@ -361,11 +361,8 @@ export const db = {
     };
 
     if (supabase) {
-      // In live Supabase, creating a mentor manually requires auth.signUp or admin functions.
-      // For ease in this prototype, we'll write directly to profiles.
       const { data, error } = await supabase.from('profiles').insert(newMentor).select().single();
       if (!error && data) return data as Profile;
-      console.error('Supabase addMentor error:', error);
     }
 
     const mentors = getLocalStorage<Profile[]>('univision_mentors_profiles', INITIAL_MENTORS);
@@ -376,28 +373,7 @@ export const db = {
 
   // --- Wallets ---
   async getWallet(studentId: string): Promise<Wallet | null> {
-    if (supabase) {
-      const { data, error } = await supabase.from('wallets').select('*').eq('student_id', studentId).single();
-      if (!error && data) return data as Wallet;
-      
-      if (error && error.code === 'PGRST116') {
-        // Automatically provision wallet row in Supabase
-        const newWallet = {
-          id: crypto.randomUUID(),
-          student_id: studentId,
-          balance: 0.00
-        };
-        const { data: createdWallet, error: createError } = await supabase
-          .from('wallets')
-          .insert(newWallet)
-          .select()
-          .single();
-        if (!createError && createdWallet) return createdWallet as Wallet;
-      } else {
-        console.error('Supabase getWallet error:', error);
-      }
-    }
-    const wallets = getLocalStorage<Wallet[]>('univision_wallets', []);
+    const wallets = await this.getWallets();
     let wallet = wallets.find(w => w.student_id === studentId);
     if (!wallet) {
       wallet = {
@@ -405,19 +381,36 @@ export const db = {
         student_id: studentId,
         balance: 0.00
       };
-      wallets.push(wallet);
-      setLocalStorage('univision_wallets', wallets);
+      if (supabase) {
+        try {
+          await supabase.from('wallets').insert(wallet);
+        } catch (e) {
+          console.error('Supabase create wallet error:', e);
+        }
+      }
+      const localWallets = getLocalStorage<Wallet[]>('univision_wallets', []);
+      localWallets.push(wallet);
+      setLocalStorage('univision_wallets', localWallets);
     }
     return wallet;
   },
 
   async getWallets(): Promise<Wallet[]> {
+    let dbWallets: Wallet[] = [];
     if (supabase) {
-      const { data, error } = await supabase.from('wallets').select('*');
-      if (!error && data) return data as Wallet[];
-      console.error('Supabase getWallets error:', error);
+      try {
+        const { data, error } = await supabase.from('wallets').select('*');
+        if (!error && data) dbWallets = data as Wallet[];
+      } catch (e) {
+        console.error('Supabase getWallets error:', e);
+      }
     }
-    return getLocalStorage<Wallet[]>('univision_wallets', []);
+    const localWallets = getLocalStorage<Wallet[]>('univision_wallets', []);
+    const map = new Map<string, Wallet>();
+    localWallets.forEach(w => map.set(w.student_id, w));
+    dbWallets.forEach(w => map.set(w.student_id, w));
+
+    return Array.from(map.values());
   },
 
   // --- Enrollments ---

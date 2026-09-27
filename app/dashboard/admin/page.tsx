@@ -177,6 +177,22 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     refreshDashboardData();
+
+    const handleDataChange = () => {
+      refreshDashboardData();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', handleDataChange);
+      window.addEventListener('univision_data_change', handleDataChange);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleDataChange);
+        window.removeEventListener('univision_data_change', handleDataChange);
+      }
+    };
   }, [router]);
 
   // Handle Dynamic Course / Batch change
@@ -532,11 +548,23 @@ export default function AdminDashboard() {
             </h1>
             <p className="text-[11px] text-muted-foreground mt-0.5">July 2026 | Welcome back, {adminUser?.name}</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {enrollments.filter(e => e.payment_status === 'pending').length > 0 && (
+              <button
+                onClick={() => { setActiveTab('verifications'); setMessage(null); }}
+                className="px-3 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold rounded-full animate-pulse cursor-pointer hover:bg-amber-500/20 transition-all flex items-center gap-1.5"
+              >
+                <ShieldAlert className="h-3.5 w-3.5" />
+                {enrollments.filter(e => e.payment_status === 'pending').length} payment pending
+              </button>
+            )}
             {pendingRedemptions.length > 0 && (
-              <span className="px-2.5 py-1 bg-red-500/10 text-red-500 border border-red-500/20 text-[10px] font-bold rounded-full animate-pulse">
+              <button
+                onClick={() => { setActiveTab('redeem'); setMessage(null); }}
+                className="px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 text-[10px] font-bold rounded-full animate-pulse cursor-pointer hover:bg-red-500/20 transition-all"
+              >
                 {pendingRedemptions.length} redeem pending
-              </span>
+              </button>
             )}
             <div className="h-9 w-9 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-500 font-bold flex items-center justify-center text-xs">
               AD
