@@ -28,6 +28,14 @@ export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      if (hash.includes('error=access_denied') || hash.includes('otp_expired') || hash.includes('error_description')) {
+        router.push('/auth?error=expired');
+        return;
+      }
+    }
+
     const checkAuth = () => {
       const user = db.getCurrentUser();
       setIsLoggedIn(!!user);
@@ -54,7 +62,7 @@ export default function Home() {
       window.removeEventListener('univision_auth_change', checkAuth);
       window.removeEventListener('storage', checkAuth);
     };
-  }, []);
+  }, [router]);
 
   const handleBookCourse = (courseId: string) => {
     if (isLoggedIn) {

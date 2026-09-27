@@ -182,6 +182,10 @@ export const db = {
     return supabase !== null;
   },
 
+  getSupabaseClient() {
+    return supabase;
+  },
+
   // --- Courses ---
   async getCourses(): Promise<Course[]> {
     if (supabase) {
@@ -742,12 +746,45 @@ export const db = {
       if (error) throw error;
       if (!data.user) throw new Error('Sign in failed.');
       
-      const { data: profile, error: profileError } = await supabase
+      // Query profile by user ID or email
+      let { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', data.user.id)
-        .single();
-      if (profileError || !profile) throw new Error('User profile not found in database.');
+        .maybeSingle();
+
+      if (!profile) {
+        const { data: profileByEmail } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', data.user.email || email)
+          .maybeSingle();
+        profile = profileByEmail;
+      }
+
+      // Auto-heal missing profile row in public.profiles table
+      if (!profile) {
+        const isTargetAdmin = (data.user.email || email).toLowerCase().includes('admin') || (data.user.email || email).toLowerCase().includes('univisioncounsel');
+        const roleVal: 'student' | 'mentor' | 'admin' | 'core' = data.user.user_metadata?.role || (isTargetAdmin ? 'admin' : 'student');
+        
+        const newProfile: Profile = {
+          id: data.user.id,
+          name: data.user.user_metadata?.name || (isTargetAdmin ? 'Mohamed Jaris (CEO & Founder)' : (data.user.email?.split('@')[0] || 'User Profile')),
+          email: data.user.email || email,
+          role: roleVal,
+          status: 'approved',
+          created_at: new Date().toISOString()
+        };
+
+        const { data: insertedProfile } = await supabase
+          .from('profiles')
+          .upsert(newProfile)
+          .select()
+          .single();
+
+        profile = insertedProfile || newProfile;
+      }
+
       const userProfile = profile as Profile;
       if (userProfile.role === 'core' && userProfile.status === 'pending') {
         throw new Error('Your Core Member account is pending admin approval.');
@@ -780,10 +817,15 @@ export const db = {
 
   async resetPassword(email: string): Promise<boolean> {
     if (supabase) {
-      // In live Supabase: requests email password reset link
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      const redirectUrl = typeof window !== 'undefined'
+        ? `${window.location.origin}/auth?type=recovery`
+        : 'http://localhost:3000/auth?type=recovery';
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectUrl
+      });
       if (!error) return true;
       console.error('Supabase resetPassword error:', error);
+      throw error;
     }
 
     // Local Storage Fallback: resets local profile password to 'password123'
@@ -817,6 +859,24 @@ export const db = {
       return true;
     }
     return false;
+  },
+
+  async updateUserPassword(newPassword: string): Promise<boolean> {
+    if (supabase) {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        console.error('Supabase updateUser password error:', error);
+        throw error;
+      }
+      return true;
+    }
+
+    const currentUser = this.getCurrentUser();
+    if (currentUser) {
+      currentUser.password = newPassword;
+      this.setCurrentUser(currentUser);
+    }
+    return true;
   },
 
   async registerUser(
@@ -867,6 +927,11 @@ export const db = {
     }
 
     // Local Storage Mode Fallback:
+    const existingProfiles = await this.getProfiles();
+    if (existingProfiles.some(p => p.email.toLowerCase() === email.trim().toLowerCase())) {
+      throw new Error('User already registered with this email.');
+    }
+
     const userId = crypto.randomUUID();
     let referredById: string | null = null;
 

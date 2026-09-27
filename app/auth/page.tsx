@@ -11,7 +11,7 @@ function AuthContent() {
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') || '/';
 
-  const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'forgot' | 'update_password'>('signin');
   const [selectedRole, setSelectedRole] = useState<'student' | 'mentor' | 'admin'>('student');
   
   // Sign In Form States
@@ -21,6 +21,12 @@ function AuthContent() {
   
   // Forgot Password States
   const [forgotEmail, setForgotEmail] = useState('');
+  
+  // Update Password States (Recovery Link Flow)
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
   
   // Sign Up Form States
   const [name, setName] = useState('');
@@ -40,6 +46,25 @@ function AuthContent() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Detect password recovery query or hash redirect from Supabase email link
+    const typeParam = searchParams.get('type');
+    const isRecoveryHash = typeof window !== 'undefined' && window.location.hash.includes('type=recovery');
+    if (typeParam === 'recovery' || isRecoveryHash) {
+      setActiveTab('update_password');
+    }
+
+    if (db.isSupabaseLive()) {
+      const client = db.getSupabaseClient();
+      if (client) {
+        const { data: { subscription } } = client.auth.onAuthStateChange((event) => {
+          if (event === 'PASSWORD_RECOVERY') {
+            setActiveTab('update_password');
+          }
+        });
+        return () => subscription.unsubscribe();
+      }
+    }
+
     const current = db.getCurrentUser();
     if (current) {
       if (current.role === 'core' && current.status === 'pending') {
@@ -54,7 +79,11 @@ function AuthContent() {
     }
 
     const errParam = searchParams.get('error');
-    if (errParam === 'pending') {
+    const windowHash = typeof window !== 'undefined' ? window.location.hash : '';
+    if (errParam === 'expired' || windowHash.includes('otp_expired') || windowHash.includes('access_denied')) {
+      setActiveTab('forgot');
+      setError('Your password reset link has expired or is invalid. Please request a fresh password reset link below.');
+    } else if (errParam === 'pending') {
       setError('Your Core Member account is pending admin approval.');
     } else if (errParam === 'rejected') {
       setError('Your Core Member application has been rejected.');
@@ -134,7 +163,12 @@ function AuthContent() {
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Registration failed.');
+      const errMsg = err.message || '';
+      if (errMsg.toLowerCase().includes('already registered') || errMsg.toLowerCase().includes('already exists')) {
+        setError('This email address is already registered. Please switch to the "Sign In" tab above to log in.');
+      } else {
+        setError(errMsg || 'Registration failed.');
+      }
     } finally {
       setLoading(false);
     }
@@ -158,6 +192,38 @@ function AuthContent() {
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Failed to send reset link.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (!newPassword || !confirmNewPassword) {
+      setError('Please fill in both password fields.');
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await db.updateUserPassword(newPassword);
+      setSuccess('Password updated successfully! Redirecting to Sign In...');
+      setTimeout(() => {
+        setActiveTab('signin');
+        setSuccess('');
+        setError('');
+      }, 1500);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to update password.');
     } finally {
       setLoading(false);
     }
@@ -511,57 +577,86 @@ function AuthContent() {
             </div>
           </form>
         )}
+
+        {activeTab === 'update_password' && (
+          /* UPDATE PASSWORD FORM (RECOVERY FLOW) */
+          <form onSubmit={handleUpdatePassword} className="space-y-5">
+            <div className="space-y-1 text-center sm:text-left mb-6">
+              <h2 className="text-2xl font-extrabold text-foreground">Set New Password</h2>
+              <p className="text-xs text-muted-foreground">Enter your new password below to update your account</p>
+            </div>
+
+            <div className="space-y-1 text-left">
+              <label className="text-xs font-semibold text-muted-foreground" htmlFor="new-password">New Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground/60" />
+                <input
+                  id="new-password"
+                  type={showNewPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-10 text-sm text-foreground focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus:outline-none"
+                  aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1 text-left">
+              <label className="text-xs font-semibold text-muted-foreground" htmlFor="confirm-new-password">Confirm New Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground/60" />
+                <input
+                  id="confirm-new-password"
+                  type={showConfirmNewPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-10 text-sm text-foreground focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                  className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus:outline-none"
+                  aria-label={showConfirmNewPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showConfirmNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 text-center text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-550/20 transition-all cursor-pointer flex items-center justify-center gap-2"
+            >
+              {loading ? 'Updating...' : 'Update Password'}
+              <ArrowRight className="h-4 w-4" />
+            </button>
+
+            <div className="flex justify-center text-xs pt-2">
+              <button
+                type="button"
+                onClick={() => { setActiveTab('signin'); setError(''); setSuccess(''); }}
+                className="text-muted-foreground hover:text-foreground cursor-pointer font-bold flex items-center gap-1 transition-all"
+              >
+                ← Back to Sign In
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
-      {/* ROLE SELECTION SECTION */}
-      <div className="mt-8 p-6 bg-card rounded-3xl border border-border text-center space-y-4">
-        <div className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-400 tracking-wider uppercase">
-          <Sparkles className="h-3.5 w-3.5" />
-          <span>Select Role to Login</span>
-        </div>
-        <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-          Choose your account role for quick authentication
-        </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <button
-            type="button"
-            onClick={() => handleRoleLogin('student')}
-            className={`py-3 px-3 border rounded-xl font-bold transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-2 ${
-              selectedRole === 'student'
-                ? 'bg-blue-600/20 border-blue-500 text-blue-400 shadow-sm'
-                : 'bg-secondary border-border text-foreground hover:border-blue-500/50 hover:bg-secondary/80'
-            }`}
-          >
-            <GraduationCap className="h-4 w-4 shrink-0 text-blue-400" />
-            <span>Login as Student</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleRoleLogin('mentor')}
-            className={`py-3 px-3 border rounded-xl font-bold transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-2 ${
-              selectedRole === 'mentor'
-                ? 'bg-blue-600/20 border-blue-500 text-blue-400 shadow-sm'
-                : 'bg-secondary border-border text-foreground hover:border-blue-500/50 hover:bg-secondary/80'
-            }`}
-          >
-            <UserCheck className="h-4 w-4 shrink-0 text-emerald-400" />
-            <span>Login as Mentor</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleRoleLogin('admin')}
-            className={`py-3 px-3 border rounded-xl font-bold transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-2 ${
-              selectedRole === 'admin'
-                ? 'bg-blue-600/20 border-blue-500 text-blue-400 shadow-sm'
-                : 'bg-secondary border-border text-foreground hover:border-blue-500/50 hover:bg-secondary/80'
-            }`}
-          >
-            <ShieldCheck className="h-4 w-4 shrink-0 text-purple-400" />
-            <span>Login as Admin</span>
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
