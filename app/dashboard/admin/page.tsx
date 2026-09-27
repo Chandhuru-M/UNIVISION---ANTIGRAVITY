@@ -182,15 +182,21 @@ export default function AdminDashboard() {
       refreshDashboardData();
     };
 
+    let intervalId: any = null;
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', handleDataChange);
       window.addEventListener('univision_data_change', handleDataChange);
+      // Auto-poll every 3 seconds to catch live payment requests across browsers/devices
+      intervalId = setInterval(() => {
+        refreshDashboardData();
+      }, 3000);
     }
 
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('storage', handleDataChange);
         window.removeEventListener('univision_data_change', handleDataChange);
+        if (intervalId) clearInterval(intervalId);
       }
     };
   }, [router]);
@@ -921,9 +927,10 @@ export default function AdminDashboard() {
                           const courseName = courses.find(c => c.id === enrollment.course_id)?.name || 'Unknown Course';
                           const batchName = batches.find(b => b.id === enrollment.batch_id)?.name || 'Unknown Batch';
                           
-                          // Referral ID lookup
-                          const referrerProfile = enrollment.referred_by_id 
-                            ? profiles.find(p => p.id === enrollment.referred_by_id) 
+                          // Referral ID lookup (check enrollment.referred_by_id first, fallback to studentProfile.referred_by_id)
+                          const effectiveReferrerId = enrollment.referred_by_id || studentProfile?.referred_by_id;
+                          const referrerProfile = effectiveReferrerId 
+                            ? profiles.find(p => p.id === effectiveReferrerId) 
                             : null;
                           const referralCodeDisplay = referrerProfile?.referral_code || 'None';
 

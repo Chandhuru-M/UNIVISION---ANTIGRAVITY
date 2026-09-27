@@ -111,15 +111,21 @@ export default function StudentDashboard() {
       loadDashboardData();
     };
 
+    let intervalId: any = null;
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', handleDataChange);
       window.addEventListener('univision_data_change', handleDataChange);
+      // Auto-poll every 3 seconds to catch live approvals across different browsers/devices
+      intervalId = setInterval(() => {
+        loadDashboardData();
+      }, 3000);
     }
 
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('storage', handleDataChange);
         window.removeEventListener('univision_data_change', handleDataChange);
+        if (intervalId) clearInterval(intervalId);
       }
     };
   }, [router]);

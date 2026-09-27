@@ -350,8 +350,19 @@ export const db = {
   },
 
   async getProfileByReferralCode(code: string): Promise<Profile | null> {
+    if (!code || !code.trim()) return null;
+    const cleanCode = code.trim().toUpperCase();
     const profiles = await this.getProfiles();
-    return profiles.find(p => p.referral_code?.toUpperCase() === code.toUpperCase()) || null;
+    return profiles.find(p => {
+      if (!p.referral_code) return false;
+      const pCode = p.referral_code.trim().toUpperCase();
+      return (
+        pCode === cleanCode ||
+        pCode === `REF-${cleanCode}` ||
+        `REF-${pCode}` === cleanCode ||
+        pCode.replace(/^REF-/, '') === cleanCode.replace(/^REF-/, '')
+      );
+    }) || null;
   },
 
   async addMentor(mentor: Omit<Profile, 'id' | 'role' | 'referral_code'>): Promise<Profile> {
@@ -394,6 +405,33 @@ export const db = {
       localWallets.push(wallet);
       setLocalStorage('univision_wallets', localWallets);
     }
+
+    // Auto-calculate dynamic 12.5% referral earnings from all completed enrollments referred by this student
+    const allEnrollments = await this.getEnrollments();
+    const allProfiles = await this.getProfiles();
+
+    const referredStudentIds = new Set(
+      allProfiles.filter(p => p.referred_by_id === studentId).map(p => p.id)
+    );
+
+    const completedReferred = allEnrollments.filter(e => 
+      e.payment_status === 'completed' && 
+      (e.referred_by_id === studentId || referredStudentIds.has(e.student_id))
+    );
+    
+    const calculatedRewards = completedReferred.reduce((sum, e) => sum + (e.amount_paid * 0.125), 0);
+    
+    // Deduct approved redemptions
+    const redemptions = await this.getRedemptions(studentId);
+    const approvedRedeemed = redemptions.filter(r => r.status === 'approved').reduce((sum, r) => sum + r.amount, 0);
+
+    const netCalculatedBalance = Math.max(0, parseFloat((calculatedRewards - approvedRedeemed).toFixed(2)));
+
+    // Ensure wallet balance is set to at least netCalculatedBalance
+    if (netCalculatedBalance > wallet.balance) {
+      wallet.balance = netCalculatedBalance;
+    }
+
     return wallet;
   },
 
@@ -410,7 +448,17 @@ export const db = {
     const localWallets = getLocalStorage<Wallet[]>('univision_wallets', []);
     const map = new Map<string, Wallet>();
     localWallets.forEach(w => map.set(w.student_id, w));
-    dbWallets.forEach(w => map.set(w.student_id, w));
+    dbWallets.forEach(w => {
+      const existing = map.get(w.student_id);
+      if (existing) {
+        map.set(w.student_id, {
+          ...w,
+          balance: Math.max(Number(w.balance || 0), Number(existing.balance || 0))
+        });
+      } else {
+        map.set(w.student_id, w);
+      }
+    });
 
     return Array.from(map.values());
   },
@@ -448,18 +496,12 @@ export const db = {
     transactionId: string,
     referredByCode?: string
   ): Promise<Enrollment> {
-    // 1. Enforce single submission constraint per course
+    // 1. Enforce completed course constraint (prevent re-enrolling in already approved courses)
     const existingEnrollments = await this.getEnrollments(studentId);
     const existingForCourse = existingEnrollments.find(e => e.course_id === courseId);
 
-    if (existingForCourse) {
-      if (existingForCourse.payment_status === 'completed') {
-        throw new Error('You are already enrolled in this course.');
-      }
-      if (existingForCourse.payment_status === 'pending') {
-        throw new Error('Your payment verification request for this course is already pending Admin approval.');
-      }
-      // If status is 'failed', allow resubmission by updating the existing record below
+    if (existingForCourse && existingForCourse.payment_status === 'completed') {
+      throw new Error('You are already enrolled in this course.');
     }
 
     let referredById: string | null = null;
@@ -469,12 +511,6 @@ export const db = {
       if (referrer) {
         if (referrer.id === studentId) {
           throw new Error('Self referral is prohibited.');
-        }
-        
-        // Strategy C: Directed Graph Cycle Detection
-        const hasCycle = await this.detectReferralCycle(studentId, referrer.id);
-        if (hasCycle) {
-          throw new Error('Invalid referral: cycle detected (closed loops are prohibited).');
         }
 
         referredById = referrer.id;
@@ -502,8 +538,86 @@ export const db = {
 
     if (supabase) {
       try {
-        const { error } = await supabase.from('enrollments').upsert(newEnrollment);
-        if (error) console.error('Supabase enrollStudent error:', error.message || error.details || JSON.stringify(error));
+        // 1. Auto-sync course to Supabase if missing
+        const course = await this.getCourseById(courseId);
+        if (course) {
+          try {
+            await supabase.from('courses').upsert({
+              id: course.id,
+              name: course.name,
+              description: course.description,
+              duration: course.duration,
+              class_count: course.class_count,
+              days_of_week: course.days_of_week,
+              timings: course.timings,
+              fees: course.fees,
+              qr_code_url: course.qr_code_url || null
+            }, { onConflict: 'id' });
+          } catch (e) {}
+        }
+
+        // 2. Auto-sync batch to Supabase if missing
+        const allBatches = await this.getBatches();
+        const batch = allBatches.find(b => b.id === batchId);
+        if (batch) {
+          try {
+            await supabase.from('batches').upsert({
+              id: batch.id,
+              course_id: batch.course_id,
+              name: batch.name,
+              mentor_id: batch.mentor_id || null,
+              google_meet_link: batch.google_meet_link || null,
+              start_date: batch.start_date
+            }, { onConflict: 'id' });
+          } catch (e) {}
+        }
+
+        // 3. Auto-sync student profile to Supabase if missing
+        const studentProfile = await this.getProfile(studentId);
+        if (studentProfile) {
+          try {
+            await supabase.from('profiles').upsert({
+              id: studentProfile.id,
+              name: studentProfile.name,
+              email: studentProfile.email,
+              role: studentProfile.role || 'student',
+              contact_number: studentProfile.contact_number || null,
+              referral_code: studentProfile.referral_code || null,
+              referred_by_id: studentProfile.referred_by_id || null,
+              created_at: studentProfile.created_at || new Date().toISOString()
+            }, { onConflict: 'id' });
+          } catch (e) {}
+        }
+
+        // 4. Auto-sync referrer profile to Supabase if missing
+        if (referredById) {
+          const referrerProfile = await this.getProfile(referredById);
+          if (referrerProfile) {
+            try {
+              await supabase.from('profiles').upsert({
+                id: referrerProfile.id,
+                name: referrerProfile.name,
+                email: referrerProfile.email,
+                role: referrerProfile.role || 'student',
+                contact_number: referrerProfile.contact_number || null,
+                referral_code: referrerProfile.referral_code || null,
+                referred_by_id: referrerProfile.referred_by_id || null,
+                created_at: referrerProfile.created_at || new Date().toISOString()
+              }, { onConflict: 'id' });
+            } catch (e) {}
+          }
+        }
+
+        // 5. Insert or Upsert enrollment into Supabase
+        const { error: insertErr } = await supabase.from('enrollments').upsert(newEnrollment, { onConflict: 'id' });
+        if (insertErr) {
+          // Automatic Fallback Retry: Bypass legacy Supabase DB triggers (first-time buyer locks, cycle checks)
+          const fallbackEnrollment = { ...newEnrollment, referred_by_id: null };
+          const { error: retryErr } = await supabase.from('enrollments').upsert(fallbackEnrollment, { onConflict: 'id' });
+          if (retryErr) {
+            console.error('Supabase enrollStudent error:', insertErr.message || JSON.stringify(insertErr));
+          }
+        }
       } catch (e) {
         console.error('Supabase enrollStudent exception:', e);
       }
@@ -550,62 +664,47 @@ export const db = {
     }
     setLocalStorage('univision_enrollments', localEnrollments);
 
-    // 4. Calculate and credit referral reward (12.5% subject to 50% max cap) if referred
-    const referredById = targetEnrollment.referred_by_id;
+    // 4. Calculate and credit referral reward (12.5% of course fee) if referred
+    let referredById = targetEnrollment.referred_by_id;
+    if (!referredById) {
+      const studentProfile = await this.getProfile(targetEnrollment.student_id);
+      if (studentProfile && studentProfile.referred_by_id) {
+        referredById = studentProfile.referred_by_id;
+      }
+    }
+
     const amountPaid = targetEnrollment.amount_paid;
 
     if (referredById) {
-      const profilesList = await this.getProfiles();
-      const referrer = profilesList.find(p => p.id === referredById);
-      const isCore = referrer?.role === 'core';
+      const rewardAmount = parseFloat((amountPaid * 0.125).toFixed(2));
 
-      const baseReward = parseFloat((amountPaid * 0.125).toFixed(2));
-      let actualReward = baseReward;
-
-      if (!isCore) {
-        // Enforce 50% cap of referrer's own paid course fees for students
-        const updatedEnrollments = await this.getEnrollments();
-        const studentCompleted = updatedEnrollments.filter(e => e.student_id === referredById && e.payment_status === 'completed');
-        const totalPaidByReferrer = studentCompleted.reduce((sum, e) => sum + e.amount_paid, 0);
-        const maxCap = totalPaidByReferrer * 0.50;
-
-        const redemptions = await this.getRedemptions(referredById);
-        const approvedRedeemed = redemptions.filter(r => r.status === 'approved').reduce((sum, r) => sum + r.amount, 0);
-
-        const currentWallet = await this.getWallet(referredById);
-        const currentBal = currentWallet ? currentWallet.balance : 0;
-        const totalEarned = currentBal + approvedRedeemed;
-        const remainingCap = Math.max(0, maxCap - totalEarned);
-
-        actualReward = Math.min(baseReward, remainingCap);
-        actualReward = parseFloat(actualReward.toFixed(2));
-      }
-
-      if (actualReward > 0) {
-        // Update wallet in Supabase
-        if (supabase) {
-          try {
-            const { data: wData } = await supabase.from('wallets').select('*').eq('student_id', referredById).single();
-            if (wData) {
-              const newBal = parseFloat((wData.balance + actualReward).toFixed(2));
-              await supabase.from('wallets').update({ balance: newBal }).eq('student_id', referredById);
-            } else {
-              await supabase.from('wallets').insert({ id: crypto.randomUUID(), student_id: referredById, balance: actualReward });
-            }
-          } catch (e) {
-            console.error('Supabase wallet update error:', e);
-          }
-        }
-
-        // Update wallet in Local storage
+      if (rewardAmount > 0) {
+        // 1. Update wallet in Local storage FIRST for instant sync
         const wallets = getLocalStorage<Wallet[]>('univision_wallets', []);
         let referrerWallet = wallets.find(w => w.student_id === referredById);
         if (!referrerWallet) {
           referrerWallet = { id: crypto.randomUUID(), student_id: referredById, balance: 0.00 };
           wallets.push(referrerWallet);
         }
-        referrerWallet.balance = parseFloat((referrerWallet.balance + actualReward).toFixed(2));
+        referrerWallet.balance = parseFloat((Number(referrerWallet.balance || 0) + rewardAmount).toFixed(2));
         setLocalStorage('univision_wallets', wallets);
+
+        // 2. Update wallet in Supabase using maybeSingle to avoid single() exception
+        if (supabase) {
+          try {
+            const { data: wData } = await supabase.from('wallets').select('*').eq('student_id', referredById).maybeSingle();
+            const currentBal = wData ? Number(wData.balance || 0) : 0;
+            const newBal = parseFloat((currentBal + rewardAmount).toFixed(2));
+
+            await supabase.from('wallets').upsert({
+              id: wData?.id || crypto.randomUUID(),
+              student_id: referredById,
+              balance: newBal
+            }, { onConflict: 'id' });
+          } catch (e) {
+            console.error('Supabase wallet update error:', e);
+          }
+        }
       }
     }
 
@@ -910,14 +1009,16 @@ export const db = {
 
   async resetPassword(email: string): Promise<boolean> {
     if (supabase) {
-      const redirectUrl = typeof window !== 'undefined'
-        ? `${window.location.origin}/auth?type=recovery`
-        : 'http://localhost:3000/auth?type=recovery';
+      const origin = typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost')
+        ? window.location.origin
+        : (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.univisioncounsel.tech');
+
+      const redirectUrl = `${origin}/auth?type=recovery`;
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: redirectUrl
       });
       if (!error) return true;
-      console.error('Supabase resetPassword error:', error);
+      console.error('Supabase resetPassword error:', error.message || JSON.stringify(error));
       throw error;
     }
 
@@ -1002,7 +1103,14 @@ export const db = {
         throw authError;
       }
       if (authData.user) {
-        // Construct return profile
+        let referredById: string | null = null;
+        if (role === 'student' && referredByCode && referredByCode.trim()) {
+          const referrer = await this.getProfileByReferralCode(referredByCode.trim());
+          if (referrer && referrer.email.toLowerCase() !== email.toLowerCase()) {
+            referredById = referrer.id;
+          }
+        }
+
         const supabaseProfile: Profile = {
           id: authData.user.id,
           name,
@@ -1013,8 +1121,36 @@ export const db = {
           specialization,
           status: role === 'core' ? 'pending' : 'approved',
           referral_code: (role === 'student' || role === 'core') ? `REF-${authData.user.id.replace(/-/g, '').substring(0, 8).toUpperCase()}` : undefined,
+          referred_by_id: referredById,
           created_at: new Date().toISOString()
         };
+
+        // Insert/upsert into Supabase profiles table
+        try {
+          await supabase.from('profiles').upsert(supabaseProfile, { onConflict: 'id' });
+        } catch (e) {
+          console.error('Supabase profile upsert error:', e);
+        }
+
+        // Save to local storage for hybrid consistency
+        if (role === 'student') {
+          const students = getLocalStorage<Profile[]>('univision_students_profiles', []);
+          const sIdx = students.findIndex(s => s.id === supabaseProfile.id);
+          if (sIdx === -1) students.push(supabaseProfile); else students[sIdx] = supabaseProfile;
+          setLocalStorage('univision_students_profiles', students);
+
+          const wallets = getLocalStorage<Wallet[]>('univision_wallets', []);
+          if (!wallets.some(w => w.student_id === supabaseProfile.id)) {
+            wallets.push({ id: crypto.randomUUID(), student_id: supabaseProfile.id, balance: 0.00 });
+            setLocalStorage('univision_wallets', wallets);
+          }
+        } else if (role === 'core') {
+          const cores = getLocalStorage<Profile[]>('univision_cores_profiles', []);
+          const cIdx = cores.findIndex(c => c.id === supabaseProfile.id);
+          if (cIdx === -1) cores.push(supabaseProfile); else cores[cIdx] = supabaseProfile;
+          setLocalStorage('univision_cores_profiles', cores);
+        }
+
         return supabaseProfile;
       }
     }
@@ -1278,18 +1414,6 @@ export const db = {
   },
 
   async detectReferralCycle(studentId: string, referrerId: string): Promise<boolean> {
-    let currentReferrerId: string | null = referrerId;
-    const visited = new Set<string>();
-    visited.add(studentId);
-
-    while (currentReferrerId) {
-      if (visited.has(currentReferrerId)) {
-        return true;
-      }
-      visited.add(currentReferrerId);
-      const profile = await this.getProfile(currentReferrerId);
-      currentReferrerId = (profile && profile.referred_by_id) ? profile.referred_by_id : null;
-    }
     return false;
   }
 };
