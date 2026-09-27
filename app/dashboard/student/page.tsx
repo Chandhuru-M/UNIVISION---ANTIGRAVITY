@@ -106,6 +106,22 @@ export default function StudentDashboard() {
     }
 
     loadDashboardData();
+
+    const handleDataChange = () => {
+      loadDashboardData();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', handleDataChange);
+      window.addEventListener('univision_data_change', handleDataChange);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleDataChange);
+        window.removeEventListener('univision_data_change', handleDataChange);
+      }
+    };
   }, [router]);
 
   const handleCopyReferral = () => {
@@ -456,9 +472,34 @@ export default function StudentDashboard() {
 
                     <div className="pt-4 border-t border-border flex flex-col sm:flex-row justify-between items-center gap-4">
                       {payment_status === 'pending' ? (
-                        <div className="flex items-center gap-2 w-full p-3 rounded-xl bg-amber-500/5 border border-amber-500/10 text-[10.5px] text-amber-500 font-bold">
-                          <AlertCircle className="h-4 w-4 text-amber-500 animate-pulse shrink-0" />
-                          <span>Verification Pending: GPay reference checks in progress. Link active upon approval.</span>
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 w-full p-3 rounded-xl bg-amber-500/5 border border-amber-500/10 text-[10.5px] text-amber-500 font-bold">
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4 text-amber-500 animate-pulse shrink-0" />
+                            <span>Verification Pending: GPay reference checks in progress. Link active upon approval.</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (confirm('Are you sure you want to cancel and remove this pending enrollment request?')) {
+                                setActionLoading(true);
+                                try {
+                                  await db.removeEnrollment(enrollmentId);
+                                  setMessage({ type: 'success', text: 'Pending enrollment request removed.' });
+                                  if (typeof window !== 'undefined') {
+                                    window.dispatchEvent(new Event('univision_data_change'));
+                                    window.dispatchEvent(new Event('storage'));
+                                  }
+                                } catch (err) {
+                                  console.error(err);
+                                } finally {
+                                  setActionLoading(false);
+                                }
+                              }
+                            }}
+                            className="px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-[10px] font-bold cursor-pointer shrink-0 transition-all"
+                          >
+                            Cancel Request
+                          </button>
                         </div>
                       ) : (
                         <>

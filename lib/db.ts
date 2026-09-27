@@ -184,6 +184,8 @@ const getLocalStorage = <T>(key: string, defaultValue: T): T => {
 const setLocalStorage = <T>(key: string, value: T) => {
   if (typeof window !== 'undefined') {
     localStorage.setItem(key, JSON.stringify(value));
+    window.dispatchEvent(new Event('univision_data_change'));
+    window.dispatchEvent(new Event('storage'));
   }
 };
 
@@ -446,6 +448,20 @@ export const db = {
     transactionId: string,
     referredByCode?: string
   ): Promise<Enrollment> {
+    // 1. Enforce single submission constraint per course
+    const existingEnrollments = await this.getEnrollments(studentId);
+    const existingForCourse = existingEnrollments.find(e => e.course_id === courseId);
+
+    if (existingForCourse) {
+      if (existingForCourse.payment_status === 'completed') {
+        throw new Error('You are already enrolled in this course.');
+      }
+      if (existingForCourse.payment_status === 'pending') {
+        throw new Error('Your payment verification request for this course is already pending Admin approval.');
+      }
+      // If status is 'failed', allow resubmission by updating the existing record below
+    }
+
     let referredById: string | null = null;
     
     if (referredByCode && referredByCode.trim()) {
@@ -472,11 +488,11 @@ export const db = {
     }
 
     const newEnrollment: Enrollment = {
-      id: crypto.randomUUID(),
+      id: existingForCourse ? existingForCourse.id : crypto.randomUUID(),
       student_id: studentId,
       batch_id: batchId,
       course_id: courseId,
-      payment_status: 'pending', // Starts as pending until manual admin approval
+      payment_status: 'pending', // Reset to pending for verification
       payment_method: 'QR Code',
       amount_paid: amountPaid,
       transaction_id: transactionId,
@@ -486,8 +502,8 @@ export const db = {
 
     if (supabase) {
       try {
-        const { error } = await supabase.from('enrollments').insert(newEnrollment);
-        if (error) console.error('Supabase enrollStudent error:', error);
+        const { error } = await supabase.from('enrollments').upsert(newEnrollment);
+        if (error) console.error('Supabase enrollStudent error:', error.message || error.details || JSON.stringify(error));
       } catch (e) {
         console.error('Supabase enrollStudent exception:', e);
       }
@@ -616,23 +632,25 @@ export const db = {
 
   async rejectEnrollment(enrollmentId: string): Promise<boolean> {
     if (supabase) {
-      const { error } = await supabase
-        .from('enrollments')
-        .update({ payment_status: 'failed' })
-        .eq('id', enrollmentId);
-      if (!error) return true;
-      console.error('Supabase rejectEnrollment error:', error);
+      try {
+        const { error } = await supabase
+          .from('enrollments')
+          .update({ payment_status: 'failed' })
+          .eq('id', enrollmentId);
+        if (error) console.error('Supabase rejectEnrollment error:', error);
+      } catch (e) {
+        console.error('Supabase rejectEnrollment exception:', e);
+      }
     }
 
-    // Local mode manual rejection:
+    // Always update local storage as well for hybrid consistency
     const enrollments = getLocalStorage<Enrollment[]>('univision_enrollments', []);
     const idx = enrollments.findIndex(e => e.id === enrollmentId);
     if (idx !== -1) {
       enrollments[idx].payment_status = 'failed';
       setLocalStorage('univision_enrollments', enrollments);
-      return true;
     }
-    return false;
+    return true;
   },
 
   async updateCourseQrCode(courseId: string, qrCodeUrl: string): Promise<boolean> {
@@ -657,12 +675,15 @@ export const db = {
 
   async removeEnrollment(enrollmentId: string): Promise<boolean> {
     if (supabase) {
-      const { error } = await supabase.from('enrollments').delete().eq('id', enrollmentId);
-      if (!error) return true;
-      console.error('Supabase removeEnrollment error:', error);
+      try {
+        const { error } = await supabase.from('enrollments').delete().eq('id', enrollmentId);
+        if (error) console.error('Supabase removeEnrollment error:', error);
+      } catch (e) {
+        console.error('Supabase removeEnrollment exception:', e);
+      }
     }
 
-    // Local mode removal:
+    // Always remove from local storage as well for hybrid consistency
     const enrollments = getLocalStorage<Enrollment[]>('univision_enrollments', []);
     const updated = enrollments.filter(e => e.id !== enrollmentId);
     setLocalStorage('univision_enrollments', updated);

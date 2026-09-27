@@ -117,6 +117,11 @@ function PaymentContent() {
         referralCode.trim() || undefined
       );
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('univision_data_change'));
+        window.dispatchEvent(new Event('storage'));
+      }
+
       setPaymentSuccess(true);
     } catch (err: any) {
       console.error('Enrollment submission error:', err);
@@ -245,6 +250,14 @@ function PaymentContent() {
         {/* Course Details Panel */}
         <div className="glass-panel rounded-3xl p-6 border border-border space-y-6">
           <h2 className="text-xl font-bold text-foreground">Order Summary</h2>
+
+          {user && (
+            <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl space-y-1">
+              <span className="text-[10px] text-blue-400 uppercase font-bold tracking-wider block">Enrolling Account</span>
+              <p className="text-sm font-bold text-foreground">{user.name} ({user.email})</p>
+              {user.contact_number && <p className="text-xs text-muted-foreground">Contact: {user.contact_number}</p>}
+            </div>
+          )}
 
           {course && batch && (
             <div className="space-y-4">

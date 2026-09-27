@@ -914,8 +914,8 @@ export default function AdminDashboard() {
                         .map((enrollment) => {
                           const studentProfile = profiles.find(p => p.id === enrollment.student_id);
                           const sInfo = {
-                            name: studentProfile?.name || 'Unknown Student',
-                            email: studentProfile?.email || '',
+                            name: studentProfile?.name || `Student (${enrollment.student_id.slice(0, 8)})`,
+                            email: studentProfile?.email || 'N/A',
                             contact: studentProfile?.contact_number || 'N/A'
                           };
                           const courseName = courses.find(c => c.id === enrollment.course_id)?.name || 'Unknown Course';
@@ -976,58 +976,83 @@ export default function AdminDashboard() {
                                 </span>
                               </td>
                               <td className="p-4 text-center">
-                                {enrollment.payment_status === 'pending' ? (
-                                  <div className="flex gap-2 justify-center">
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        setActionLoading(true);
-                                        try {
-                                          const success = await db.approveEnrollment(enrollment.id);
-                                          if (success) {
-                                            setMessage({ type: 'success', text: `Payment verified for ${sInfo.name}. Cohort access granted!` });
-                                            await refreshDashboardData();
-                                          }
-                                        } catch (err) {
-                                          console.error(err);
-                                          setMessage({ type: 'error', text: 'Verification approval failed.' });
-                                        } finally {
-                                          setActionLoading(false);
-                                        }
-                                      }}
-                                      disabled={actionLoading}
-                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all text-[10px] cursor-pointer"
-                                    >
-                                      Verify Payment
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        if (confirm(`Reject payment request from ${sInfo.name}?`)) {
+                                <div className="flex gap-1.5 justify-center items-center">
+                                  {enrollment.payment_status === 'pending' && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
                                           setActionLoading(true);
                                           try {
-                                            const success = await db.rejectEnrollment(enrollment.id);
+                                            const success = await db.approveEnrollment(enrollment.id);
                                             if (success) {
-                                              setMessage({ type: 'success', text: `Payment request for ${sInfo.name} rejected.` });
+                                              setMessage({ type: 'success', text: `Payment verified for ${sInfo.name}. Cohort access granted!` });
                                               await refreshDashboardData();
                                             }
                                           } catch (err) {
                                             console.error(err);
-                                            setMessage({ type: 'error', text: 'Rejection failed.' });
+                                            setMessage({ type: 'error', text: 'Verification approval failed.' });
                                           } finally {
                                             setActionLoading(false);
                                           }
+                                        }}
+                                        disabled={actionLoading}
+                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all text-[10px] cursor-pointer"
+                                      >
+                                        Verify Payment
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          if (confirm(`Reject payment request from ${sInfo.name}?`)) {
+                                            setActionLoading(true);
+                                            try {
+                                              const success = await db.rejectEnrollment(enrollment.id);
+                                              if (success) {
+                                                setMessage({ type: 'success', text: `Payment request for ${sInfo.name} rejected.` });
+                                                await refreshDashboardData();
+                                              }
+                                            } catch (err) {
+                                              console.error(err);
+                                              setMessage({ type: 'error', text: 'Rejection failed.' });
+                                            } finally {
+                                              setActionLoading(false);
+                                            }
+                                          }
+                                        }}
+                                        disabled={actionLoading}
+                                        className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-all text-[10px] cursor-pointer"
+                                      >
+                                        Reject
+                                      </button>
+                                    </>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (confirm(`Permanently delete payment record for ${sInfo.name}?`)) {
+                                        setActionLoading(true);
+                                        try {
+                                          const success = await db.removeEnrollment(enrollment.id);
+                                          if (success) {
+                                            setMessage({ type: 'success', text: `Payment record deleted.` });
+                                            await refreshDashboardData();
+                                          }
+                                        } catch (err) {
+                                          console.error(err);
+                                          setMessage({ type: 'error', text: 'Deletion failed.' });
+                                        } finally {
+                                          setActionLoading(false);
                                         }
-                                      }}
-                                      disabled={actionLoading}
-                                      className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-all text-[10px] cursor-pointer"
-                                    >
-                                      Reject
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span className="text-[10px] text-muted-foreground font-semibold">Processed</span>
-                                )}
+                                      }
+                                    }}
+                                    disabled={actionLoading}
+                                    className="px-2.5 py-1.5 bg-secondary hover:bg-accent text-muted-foreground border border-border hover:text-foreground font-bold rounded-xl transition-all text-[10px] cursor-pointer"
+                                    title="Delete record"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
