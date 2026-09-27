@@ -15,15 +15,21 @@ export default function Navbar() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
-    // Read user from db helper
-    const currentUser = db.getCurrentUser();
-    setUser(currentUser);
+    const syncUser = () => {
+      const currentUser = db.getCurrentUser();
+      setUser(currentUser);
 
-    if (currentUser && (currentUser.role === 'student' || currentUser.role === 'core')) {
-      db.getWallet(currentUser.id).then(wallet => {
-        if (wallet) setWalletBalance(wallet.balance);
-      });
-    }
+      if (currentUser && (currentUser.role === 'student' || currentUser.role === 'core')) {
+        db.getWallet(currentUser.id).then(wallet => {
+          if (wallet) setWalletBalance(wallet.balance);
+          else setWalletBalance(0);
+        });
+      } else {
+        setWalletBalance(null);
+      }
+    };
+
+    syncUser();
 
     // Scroll listener for sticky background blur transition
     const handleScroll = () => {
@@ -31,6 +37,8 @@ export default function Navbar() {
     };
 
     window.addEventListener('scroll', handleScroll);
+    window.addEventListener('univision_auth_change', syncUser);
+    window.addEventListener('storage', syncUser);
     
     // Initialize Theme
     const savedTheme = localStorage.getItem('univision_theme') as 'light' | 'dark' | null;
@@ -41,7 +49,11 @@ export default function Navbar() {
       document.documentElement.className = 'dark';
     }
 
-    return () => window.removeEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('univision_auth_change', syncUser);
+      window.removeEventListener('storage', syncUser);
+    };
   }, []);
 
   const toggleTheme = () => {
@@ -56,7 +68,6 @@ export default function Navbar() {
     setUser(null);
     setWalletBalance(null);
     router.push('/');
-    router.refresh();
   };
 
   const getDashboardLink = (role: string) => {
@@ -78,12 +89,10 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex items-center">
-            <LinkNext href="/" className="flex items-center gap-2 group">
-              <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 group-hover:bg-indigo-500/20 group-hover:border-indigo-500/40 transition-all">
-                <BookOpen className="h-6 w-6 text-indigo-500" />
-              </div>
-              <span className="text-xl font-bold tracking-tight text-foreground group-hover:text-primary transition-colors">
-                Univision<span className="text-emerald-500">Counsel</span>
+            <LinkNext href="/" className="flex items-center gap-2.5 group">
+              <img src="/logo.jpg" alt="Univision Counsel Logo" className="h-9 w-auto rounded-lg object-contain" />
+              <span className="text-xl font-extrabold tracking-tight gradient-text">
+                UnivisionCounsel
               </span>
             </LinkNext>
           </div>

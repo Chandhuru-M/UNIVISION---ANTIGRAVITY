@@ -565,6 +565,47 @@ export const db = {
     return false;
   },
 
+  async rejectEnrollment(enrollmentId: string): Promise<boolean> {
+    if (supabase) {
+      const { error } = await supabase
+        .from('enrollments')
+        .update({ payment_status: 'failed' })
+        .eq('id', enrollmentId);
+      if (!error) return true;
+      console.error('Supabase rejectEnrollment error:', error);
+    }
+
+    // Local mode manual rejection:
+    const enrollments = getLocalStorage<Enrollment[]>('univision_enrollments', []);
+    const idx = enrollments.findIndex(e => e.id === enrollmentId);
+    if (idx !== -1) {
+      enrollments[idx].payment_status = 'failed';
+      setLocalStorage('univision_enrollments', enrollments);
+      return true;
+    }
+    return false;
+  },
+
+  async updateCourseQrCode(courseId: string, qrCodeUrl: string): Promise<boolean> {
+    if (supabase) {
+      const { error } = await supabase
+        .from('courses')
+        .update({ qr_code_url: qrCodeUrl })
+        .eq('id', courseId);
+      if (!error) return true;
+      console.error('Supabase updateCourseQrCode error:', error);
+    }
+
+    const courses = getLocalStorage<Course[]>('univision_courses', INITIAL_COURSES);
+    const course = courses.find(c => c.id === courseId);
+    if (course) {
+      course.qr_code_url = qrCodeUrl;
+      setLocalStorage('univision_courses', courses);
+      return true;
+    }
+    return false;
+  },
+
   async removeEnrollment(enrollmentId: string): Promise<boolean> {
     if (supabase) {
       const { error } = await supabase.from('enrollments').delete().eq('id', enrollmentId);
@@ -677,6 +718,7 @@ export const db = {
       } else {
         localStorage.removeItem('univision_current_user');
       }
+      window.dispatchEvent(new Event('univision_auth_change'));
     }
   },
 

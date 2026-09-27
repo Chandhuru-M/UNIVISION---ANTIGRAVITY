@@ -2,7 +2,8 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Sparkles, Mail, Lock, User, Calendar, Phone, Award, Gift, ArrowRight } from 'lucide-react';
+import LinkNext from 'next/link';
+import { Sparkles, Mail, Lock, User, Calendar, Phone, Gift, ArrowRight, Eye, EyeOff, BookOpen, ShieldCheck, UserCheck, GraduationCap } from 'lucide-react';
 import { db, Profile } from '@/lib/db';
 
 function AuthContent() {
@@ -11,10 +12,12 @@ function AuthContent() {
   const redirect = searchParams.get('redirect') || '/';
 
   const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  const [selectedRole, setSelectedRole] = useState<'student' | 'mentor' | 'admin'>('student');
   
   // Sign In Form States
   const [signInEmail, setSignInEmail] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
+  const [showSignInPassword, setShowSignInPassword] = useState(false);
   
   // Forgot Password States
   const [forgotEmail, setForgotEmail] = useState('');
@@ -27,6 +30,8 @@ function AuthContent() {
   const [referredByCode, setReferredByCode] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showSignUpPassword, setShowSignUpPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isCoreSignUp, setIsCoreSignUp] = useState(false);
   const [coreTeam, setCoreTeam] = useState('Marketing Team');
 
@@ -158,48 +163,55 @@ function AuthContent() {
     }
   };
 
-  const handleQuickLogin = async (presetRole: 'admin' | 'mentor' | 'core-member' | 'student-alice' | 'student-bob') => {
+  const handleRoleLogin = async (role: 'student' | 'mentor' | 'admin') => {
+    setSelectedRole(role);
     setError('');
     setSuccess('');
     setLoading(true);
 
     let targetEmail = 'alice@example.com';
-    if (presetRole === 'admin') targetEmail = 'admin@example.com';
-    else if (presetRole === 'mentor') targetEmail = 'mentor@example.com';
-    else if (presetRole === 'core-member') targetEmail = 'core@example.com';
-    else if (presetRole === 'student-bob') targetEmail = 'bob@example.com';
+    if (role === 'admin') targetEmail = 'admin@example.com';
+    else if (role === 'mentor') targetEmail = 'mentor@example.com';
+    else if (role === 'student') targetEmail = 'alice@example.com';
 
     setTimeout(async () => {
       const profilesList = await db.getProfiles();
       const user = profilesList.find(p => p.email.toLowerCase() === targetEmail.toLowerCase());
       if (user) {
-        if (user.role === 'core' && user.status === 'pending') {
-          setError('Demo Bypass blocked: core member status is pending admin approval.');
-          setLoading(false);
-          return;
-        }
         db.setCurrentUser(user);
-        setSuccess(`Demo Bypass: Logged in as ${user.name} (${user.role})`);
+        setSuccess(`Logged in as ${user.name} (${role})`);
         setTimeout(() => {
           router.push(redirect);
           router.refresh();
         }, 800);
       } else {
-        // Fallback create
-        let nameVal = presetRole === 'admin' ? 'Mohamed Jaris (CEO & Founder)' : presetRole === 'mentor' ? 'Mohamed Jaris' : presetRole === 'core-member' ? 'Jaris Core' : 'Alice Student';
-        let roleVal: 'student' | 'mentor' | 'admin' | 'core' = presetRole === 'admin' ? 'admin' : presetRole === 'mentor' ? 'mentor' : presetRole === 'core-member' ? 'core' : 'student';
-        let specVal = presetRole === 'core-member' ? 'Marketing Team' : undefined;
-        const profile = await db.registerUser(targetEmail, nameVal, roleVal, '2004-08-15', '+91 8438304400', specVal);
+        // Fallback create preset user
+        let nameVal = role === 'admin' ? 'Mohamed Jaris (CEO & Founder)' : role === 'mentor' ? 'Mohamed Jaris' : 'Alice Student';
+        const profile = await db.registerUser(targetEmail, nameVal, role, '2004-08-15', '+91 8438304400');
         db.setCurrentUser(profile);
-        router.push(redirect);
-        router.refresh();
+        setSuccess(`Logged in as ${profile.name} (${role})`);
+        setTimeout(() => {
+          router.push(redirect);
+          router.refresh();
+        }, 800);
       }
       setLoading(false);
     }, 450);
   };
 
   return (
-    <div className="max-w-md w-full mx-auto my-12 px-4">
+    <div className="max-w-md w-full mx-auto my-6 px-4">
+      {/* Brand Header Logo */}
+      <div className="flex flex-col items-center justify-center text-center mb-8">
+        <LinkNext href="/" className="flex items-center gap-2.5 mb-2">
+          <img src="/logo.jpg" alt="Univision Counsel Logo" className="h-10 w-auto rounded-xl object-contain" />
+          <span className="text-2xl font-extrabold tracking-tight gradient-text">
+            UnivisionCounsel
+          </span>
+        </LinkNext>
+        <p className="text-xs text-muted-foreground">Course Booking & LMS Platform</p>
+      </div>
+
       {/* Tab Selectors */}
       <div className="flex border-b border-border mb-8 bg-card/45 p-1 rounded-2xl">
         <button
@@ -270,13 +282,25 @@ function AuthContent() {
                 <Lock className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground/60" />
                 <input
                   id="signin-password"
-                  type="password"
+                  type={showSignInPassword ? 'text' : 'password'}
                   placeholder="••••••••"
                   value={signInPassword}
                   onChange={(e) => setSignInPassword(e.target.value)}
-                  className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
+                  className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-10 text-sm text-foreground focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowSignInPassword(!showSignInPassword)}
+                  className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus:outline-none"
+                  aria-label={showSignInPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showSignInPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
               </div>
             </div>
 
@@ -284,7 +308,7 @@ function AuthContent() {
               <button
                 type="button"
                 onClick={() => { setActiveTab('forgot'); setError(''); setSuccess(''); }}
-                className="text-blue-500 hover:text-blue-450 hover:underline cursor-pointer font-bold"
+                className="text-blue-500 hover:text-blue-400 hover:underline cursor-pointer font-bold"
               >
                 Forgot Password?
               </button>
@@ -386,13 +410,21 @@ function AuthContent() {
                   <Lock className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground/60" />
                   <input
                     id="signup-password"
-                    type="password"
+                    type={showSignUpPassword ? 'text' : 'password'}
                     placeholder="••••••••"
                     value={signUpPassword}
                     onChange={(e) => setSignUpPassword(e.target.value)}
-                    className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
+                    className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-10 text-sm text-foreground focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowSignUpPassword(!showSignUpPassword)}
+                    className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus:outline-none"
+                    aria-label={showSignUpPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showSignUpPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -403,67 +435,26 @@ function AuthContent() {
                   <Lock className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground/60" />
                   <input
                     id="signup-confirm"
-                    type="password"
+                    type={showConfirmPassword ? 'text' : 'password'}
                     placeholder="••••••••"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
+                    className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-10 text-sm text-foreground focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
                     required
                   />
-                </div>
-              </div>
-            </div>
-
-            {/* Student Referral Code */}
-            <div className="space-y-1 text-left">
-              <div className="flex justify-between items-center">
-                <label className="text-xs font-semibold text-muted-foreground" htmlFor="signup-ref">Referral ID (Optional)</label>
-                <span className="text-[10px] text-muted-foreground/70">Get cash back for your friend</span>
-              </div>
-              <div className="relative">
-                <Gift className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground/60" />
-                <input
-                  id="signup-ref"
-                  type="text"
-                  placeholder="REF-1234ABCD"
-                  value={referredByCode}
-                  onChange={(e) => setReferredByCode(e.target.value)}
-                  className="w-full bg-background border border-border rounded-xl py-3 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-mono tracking-wider text-xs uppercase"
-                />
-              </div>
-            </div>
-
-            {/* Core Member Checkbox */}
-            <div className="pt-2 flex flex-col gap-4 bg-secondary p-4 rounded-2xl border border-border text-left">
-              <div className="flex items-center gap-2">
-                <input
-                  id="signup-iscore"
-                  type="checkbox"
-                  checked={isCoreSignUp}
-                  onChange={(e) => setIsCoreSignUp(e.target.checked)}
-                  className="rounded border-border bg-background text-blue-600 focus:ring-blue-500 h-4 w-4 cursor-pointer"
-                />
-                <label className="text-xs font-bold text-foreground cursor-pointer" htmlFor="signup-iscore">
-                  Signing up as a Core Team Member?
-                </label>
-              </div>
-
-              {isCoreSignUp && (
-                <div className="space-y-1 animate-in fade-in slide-in-from-top-1 duration-150 text-left">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Select Core Team</label>
-                  <select
-                    value={coreTeam}
-                    onChange={(e) => setCoreTeam(e.target.value)}
-                    className="w-full bg-background border border-border rounded-xl py-2.5 px-3 text-xs text-foreground focus:outline-none cursor-pointer"
-                    required
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus:outline-none"
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
                   >
-                    <option value="PR Team">PR Team</option>
-                    <option value="Marketing Team">Marketing Team</option>
-                    <option value="Course Validation Team">Course Validation Team</option>
-                  </select>
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
+
+
 
             <button
               type="submit"
@@ -522,46 +513,52 @@ function AuthContent() {
         )}
       </div>
 
-      {/* QUICK LOGINS FOR DEMO TESTING */}
+      {/* ROLE SELECTION SECTION */}
       <div className="mt-8 p-6 bg-card rounded-3xl border border-border text-center space-y-4">
-        <div className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-400 tracking-wider uppercase">
+        <div className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-400 tracking-wider uppercase">
           <Sparkles className="h-3.5 w-3.5" />
-          <span>Quick Demo Bypass Panel</span>
+          <span>Select Role to Login</span>
         </div>
         <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-          One-click login to preset roles to verify course dashboards and referral payout mechanics.
+          Choose your account role for quick authentication
         </p>
 
-        <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
           <button
-            onClick={() => handleQuickLogin('admin')}
-            className="py-2.5 px-3 bg-secondary border border-border hover:border-accent-teal hover:bg-accent rounded-xl font-bold text-foreground transition-all cursor-pointer"
+            type="button"
+            onClick={() => handleRoleLogin('student')}
+            className={`py-3 px-3 border rounded-xl font-bold transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-2 ${
+              selectedRole === 'student'
+                ? 'bg-blue-600/20 border-blue-500 text-blue-400 shadow-sm'
+                : 'bg-secondary border-border text-foreground hover:border-blue-500/50 hover:bg-secondary/80'
+            }`}
           >
-            🔑 Admin Portal
+            <GraduationCap className="h-4 w-4 shrink-0 text-blue-400" />
+            <span>Login as Student</span>
           </button>
           <button
-            onClick={() => handleQuickLogin('mentor')}
-            className="py-2.5 px-3 bg-secondary border border-border hover:border-accent-teal hover:bg-accent rounded-xl font-bold text-foreground transition-all cursor-pointer"
+            type="button"
+            onClick={() => handleRoleLogin('mentor')}
+            className={`py-3 px-3 border rounded-xl font-bold transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-2 ${
+              selectedRole === 'mentor'
+                ? 'bg-blue-600/20 border-blue-500 text-blue-400 shadow-sm'
+                : 'bg-secondary border-border text-foreground hover:border-blue-500/50 hover:bg-secondary/80'
+            }`}
           >
-            🧑‍🏫 Mentor Portal
+            <UserCheck className="h-4 w-4 shrink-0 text-emerald-400" />
+            <span>Login as Mentor</span>
           </button>
           <button
-            onClick={() => handleQuickLogin('core-member')}
-            className="py-2.5 px-3 bg-secondary border border-border hover:border-accent-teal hover:bg-accent rounded-xl font-bold text-foreground transition-all cursor-pointer col-span-2"
+            type="button"
+            onClick={() => handleRoleLogin('admin')}
+            className={`py-3 px-3 border rounded-xl font-bold transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-2 ${
+              selectedRole === 'admin'
+                ? 'bg-blue-600/20 border-blue-500 text-blue-400 shadow-sm'
+                : 'bg-secondary border-border text-foreground hover:border-blue-500/50 hover:bg-secondary/80'
+            }`}
           >
-            👥 Core Team Member
-          </button>
-          <button
-            onClick={() => handleQuickLogin('student-alice')}
-            className="py-2.5 px-3 bg-secondary border border-border hover:border-accent-teal hover:bg-accent rounded-xl font-bold text-foreground transition-all cursor-pointer col-span-2"
-          >
-            🎓 Student 1: Alice (Referrer)
-          </button>
-          <button
-            onClick={() => handleQuickLogin('student-bob')}
-            className="py-2.5 px-3 bg-secondary border border-border hover:border-accent-teal hover:bg-accent rounded-xl font-bold text-foreground transition-all cursor-pointer col-span-2"
-          >
-            🎓 Student 2: Bob (Referred by Alice)
+            <ShieldCheck className="h-4 w-4 shrink-0 text-purple-400" />
+            <span>Login as Admin</span>
           </button>
         </div>
       </div>
@@ -582,3 +579,4 @@ export default function AuthPage() {
     </div>
   );
 }
+

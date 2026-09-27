@@ -6,11 +6,11 @@ import {
   ArrowLeft, 
   CheckCircle, 
   QrCode, 
-  CreditCard, 
   AlertCircle,
   MessageSquare,
   Mail,
-  HelpCircle
+  ArrowRight,
+  Gift
 } from 'lucide-react';
 import { db, Course, Batch, Profile } from '@/lib/db';
 
@@ -25,8 +25,14 @@ function PaymentContent() {
   const [batch, setBatch] = useState<Batch | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [transactionId, setTransactionId] = useState('');
+  
+  // Referral code state
+  const [referralCode, setReferralCode] = useState('');
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [requestTimestamp, setRequestTimestamp] = useState<{ date: string; time: string }>({ date: '', time: '' });
+  
+  // QR image fallback state
+  const [qrImageSrc, setQrImageSrc] = useState<string>('');
 
   useEffect(() => {
     async function loadPaymentDetails() {
@@ -51,6 +57,21 @@ function PaymentContent() {
         if (courseData && batchData) {
           setCourse(courseData);
           setBatch(batchData);
+
+          // Configure initial QR image source
+          const fallbackQr = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+            `upi://pay?pa=univisioncounsel@gmail.com&pn=Univision%20Counsel&am=${courseData.fees}&cu=INR`
+          )}`;
+          setQrImageSrc(courseData.qr_code_url && courseData.qr_code_url.trim() !== '' ? courseData.qr_code_url : fallbackQr);
+
+          // Check if user has a pre-existing referrer code
+          if (currentUser.referred_by_id) {
+            const profiles = await db.getProfiles();
+            const referrerProfile = profiles.find(p => p.id === currentUser.referred_by_id);
+            if (referrerProfile?.referral_code) {
+              setReferralCode(referrerProfile.referral_code);
+            }
+          }
         } else {
           setError('Invalid course or batch parameters.');
         }
@@ -65,37 +86,40 @@ function PaymentContent() {
     loadPaymentDetails();
   }, [courseId, batchId, router]);
 
-  const handleSimulatePayment = async () => {
-    if (!user || !course || !batch || !transactionId.trim()) return;
+  const handleQrError = () => {
+    if (course) {
+      const fallbackQr = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+        `upi://pay?pa=univisioncounsel@gmail.com&pn=Univision%20Counsel&am=${course.fees}&cu=INR`
+      )}`;
+      setQrImageSrc(fallbackQr);
+    }
+  };
+
+  const handleProceedNext = async () => {
+    if (!user || !course || !batch) return;
     setLoading(true);
 
     try {
-      // Find out if this student profile has a referred_by_id
-      const referrerId = user.referred_by_id;
-      let referrerCode: string | undefined;
-      
-      if (referrerId) {
-        const profiles = await db.getProfiles();
-        const referrerProfile = profiles.find(p => p.id === referrerId);
-        if (referrerProfile) {
-          referrerCode = referrerProfile.referral_code;
-        }
-      }
+      const now = new Date();
+      setRequestTimestamp({
+        date: now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+        time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
 
-      // Add enrollment as pending
+      // Submit enrollment request as Pending Verification
       await db.enrollStudent(
         user.id,
         batch.id,
         course.id,
         course.fees,
-        transactionId,
-        referrerCode
+        'N/A', // No manual transaction ID required
+        referralCode.trim() || undefined
       );
 
       setPaymentSuccess(true);
-    } catch (err) {
-      console.error('Enrollment error:', err);
-      setError('Failed to record payment verification. Please try again.');
+    } catch (err: any) {
+      console.error('Enrollment submission error:', err);
+      setError(err.message || 'Failed to record payment verification. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -105,20 +129,20 @@ function PaymentContent() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-24 gap-4">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-        <p className="text-zinc-550 text-sm">Initializing checkout gateway...</p>
+        <p className="text-muted-foreground text-sm">Initializing checkout gateway...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="max-w-md mx-auto my-12 p-8 glass-panel rounded-3xl text-center space-y-6 border border-zinc-800">
+      <div className="max-w-md mx-auto my-12 p-8 glass-panel rounded-3xl text-center space-y-6 border border-border">
         <AlertCircle className="h-12 w-12 text-red-500 mx-auto" />
-        <h2 className="text-xl font-bold text-white">Payment Error</h2>
-        <p className="text-sm text-zinc-400">{error}</p>
+        <h2 className="text-xl font-bold text-foreground">Payment Error</h2>
+        <p className="text-sm text-muted-foreground">{error}</p>
         <button
           onClick={() => router.push('/')}
-          className="px-6 py-2.5 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white font-semibold rounded-xl text-sm"
+          className="px-6 py-2.5 bg-secondary border border-border hover:bg-accent text-foreground font-semibold rounded-xl text-sm cursor-pointer"
         >
           Return to Courses
         </button>
@@ -128,47 +152,65 @@ function PaymentContent() {
 
   if (paymentSuccess && user && course && batch) {
     return (
-      <div className="max-w-lg mx-auto my-12 p-8 glass-panel rounded-3xl text-center space-y-6 border border-zinc-800 relative overflow-hidden animate-fade-in">
+      <div className="max-w-lg mx-auto my-12 p-8 glass-panel rounded-3xl text-center space-y-6 border border-border relative overflow-hidden animate-fade-in text-left">
         {/* Glow */}
-        <div className="absolute top-[-50px] left-[50%] translate-x-[-50%] w-32 h-32 bg-amber-500/10 rounded-full blur-xl"></div>
+        <div className="absolute top-[-50px] left-[50%] translate-x-[-50%] w-32 h-32 bg-amber-500/10 rounded-full blur-xl pointer-events-none"></div>
         
         <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-full w-fit mx-auto animate-pulse">
           <CheckCircle className="h-10 w-10" />
         </div>
 
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black text-white">Verification Pending!</h2>
-          <p className="text-xs text-zinc-400 leading-relaxed font-medium">
-            Your transaction reference <span className="text-white font-mono font-bold select-all bg-zinc-900 px-1.5 py-0.5 rounded">{transactionId}</span> has been submitted to the admin team.
-          </p>
-          <p className="text-[11px] text-zinc-500">
-            Please allow up to 24 hours for the administrator to manually verify your payment receipt. Once verified, your status will change to Completed.
+        <div className="space-y-2 text-center">
+          <div className="inline-block px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-wider mb-1">
+            Pending Verification
+          </div>
+          <h2 className="text-2xl font-black text-foreground">Payment Submitted!</h2>
+          <p className="text-xs text-muted-foreground leading-relaxed font-medium">
+            Your payment request for <strong className="text-foreground">{course.name}</strong> ({batch.name}) has been submitted for manual admin verification.
           </p>
         </div>
 
-        <div className="p-4 bg-zinc-900/60 rounded-2xl border border-zinc-900 text-left text-xs space-y-3.5">
-          <h4 className="font-bold text-zinc-500 uppercase tracking-wider text-[10px] border-b border-zinc-850 pb-1">
-            Simulated Notifications
+        {/* Verification Summary Specs */}
+        <div className="p-4 bg-card rounded-2xl border border-border space-y-3 text-xs">
+          <h4 className="font-bold text-muted-foreground uppercase tracking-wider text-[10px] border-b border-border pb-2">
+            Submitted Verification Details
           </h4>
           
-          <div className="flex gap-3 items-start">
-            <MessageSquare className="h-5 w-5 text-amber-450 shrink-0 mt-0.5" />
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <p className="font-semibold text-white">WhatsApp Alert Dispatched</p>
-              <p className="text-[10px] text-zinc-550 mt-0.5">To mobile: {user.contact_number}</p>
-              <p className="text-[10px] text-zinc-450 bg-zinc-950 p-2 rounded-lg mt-1 italic">
-                &quot;Hi {user.name}, we have received your transaction reference {transactionId} for {course.name} ({batch.name}). It is now awaiting manual admin review.&quot;
-              </p>
+              <span className="text-[10px] text-muted-foreground block">Student Name</span>
+              <span className="font-bold text-foreground">{user.name}</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground block">Contact Number</span>
+              <span className="font-bold text-foreground">{user.contact_number || 'N/A'}</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground block">Request Date</span>
+              <span className="font-bold text-foreground">{requestTimestamp.date}</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground block">Request Time</span>
+              <span className="font-bold text-foreground">{requestTimestamp.time}</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground block">Referral ID Used</span>
+              <span className="font-mono font-bold text-emerald-400">{referralCode || 'None'}</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground block">Amount Submitted</span>
+              <span className="font-bold text-foreground">₹{course.fees.toFixed(2)}</span>
             </div>
           </div>
+        </div>
 
+        <div className="p-4 bg-secondary/50 rounded-2xl border border-border text-xs space-y-3">
           <div className="flex gap-3 items-start">
-            <Mail className="h-5 w-5 text-sky-400 shrink-0 mt-0.5" />
+            <MessageSquare className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-white">Email Receipt Queued</p>
-              <p className="text-[10px] text-zinc-555 mt-0.5">To address: {user.email}</p>
-              <p className="text-[10px] text-zinc-455 bg-zinc-950 p-2 rounded-lg mt-1 italic">
-                &quot;Subject: Booking Receipt - Univision Counsel. Your payment verification request for ₹{course.fees} is being processed manually. Classroom access link will become active immediately upon approval.&quot;
+              <p className="font-semibold text-foreground">Manual Verification Note</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                The administrator will manually cross-verify your payment receipt against the submitted timestamp ({requestTimestamp.date} at {requestTimestamp.time}). Once approved, your cohort status will change to Active.
               </p>
             </div>
           </div>
@@ -179,19 +221,20 @@ function PaymentContent() {
             router.push('/dashboard/student');
             router.refresh();
           }}
-          className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-blue-500/20 transition-all cursor-pointer text-sm"
+          className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-blue-500/20 transition-all cursor-pointer text-sm flex items-center justify-center gap-2"
         >
           Go to Student Dashboard
+          <ArrowRight className="h-4 w-4" />
         </button>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-4xl mx-auto px-4 py-8 text-left">
       <button
         onClick={() => router.back()}
-        className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white mb-8 transition-colors cursor-pointer"
+        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-8 transition-colors cursor-pointer"
       >
         <ArrowLeft className="h-4 w-4" />
         Cancel & Back
@@ -199,93 +242,100 @@ function PaymentContent() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
         {/* Course Details Panel */}
-        <div className="glass-panel rounded-3xl p-6 border border-zinc-800 space-y-6">
-          <h2 className="text-xl font-bold text-white">Order Summary</h2>
+        <div className="glass-panel rounded-3xl p-6 border border-border space-y-6">
+          <h2 className="text-xl font-bold text-foreground">Order Summary</h2>
 
           {course && batch && (
             <div className="space-y-4">
-              <div className="p-4 bg-zinc-900 rounded-2xl border border-zinc-850 space-y-1.5">
-                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Course Name</span>
-                <p className="text-base font-bold text-white">{course.name}</p>
+              <div className="p-4 bg-card rounded-2xl border border-border space-y-1.5">
+                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Course Name</span>
+                <p className="text-base font-bold text-foreground">{course.name}</p>
               </div>
 
-              <div className="p-4 bg-zinc-900 rounded-2xl border border-zinc-850 space-y-1.5">
-                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Assigned Cohort Batch</span>
-                <p className="text-base font-bold text-white">{batch.name}</p>
+              <div className="p-4 bg-card rounded-2xl border border-border space-y-1.5">
+                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Assigned Cohort Batch</span>
+                <p className="text-base font-bold text-foreground">{batch.name}</p>
               </div>
 
-              <div className="p-4 bg-zinc-900 rounded-2xl border border-zinc-850 grid grid-cols-2 gap-4">
+              <div className="p-4 bg-card rounded-2xl border border-border grid grid-cols-2 gap-4">
                 <div>
-                  <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider block">Timings</span>
-                  <span className="text-xs font-bold text-zinc-300">{course.timings}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Timings</span>
+                  <span className="text-xs font-bold text-foreground">{course.timings}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider block">Duration</span>
-                  <span className="text-xs font-bold text-zinc-300">{course.duration}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Duration</span>
+                  <span className="text-xs font-bold text-foreground">{course.duration}</span>
                 </div>
               </div>
             </div>
           )}
 
-          <div className="border-t border-zinc-900 pt-4 flex justify-between items-center text-sm font-semibold">
-            <span className="text-zinc-400">Amount Due</span>
-            <span className="text-2xl font-black text-white">₹{course?.fees.toFixed(2)}</span>
+          <div className="border-t border-border pt-4 flex justify-between items-center text-sm font-semibold">
+            <span className="text-muted-foreground">Amount Due</span>
+            <span className="text-2xl font-black text-foreground">₹{course?.fees.toFixed(2)}</span>
           </div>
         </div>
 
         {/* Payment QR Code Panel */}
-        <div className="glass-panel rounded-3xl p-6 border border-zinc-800 space-y-6">
-          <div className="flex justify-center gap-2 items-center text-xs font-bold text-zinc-400 uppercase tracking-wider">
+        <div className="glass-panel rounded-3xl p-6 border border-border space-y-6">
+          <div className="flex justify-center gap-2 items-center text-xs font-bold text-muted-foreground uppercase tracking-wider">
             <QrCode className="h-4.5 w-4.5 text-blue-500" />
-            <span>Scan UPI QR to Pay</span>
+            <span>Scan UPI QR Code to Pay</span>
           </div>
 
-          {/* QR Code Graphic (renders dynamically for each course) */}
-          <div className="bg-white p-4 rounded-3xl w-fit mx-auto border-4 border-zinc-800 flex items-center justify-center shadow-lg">
-            {course?.qr_code_url ? (
+          {/* Configured QR Code Image */}
+          <div className="bg-white p-4 rounded-3xl w-fit mx-auto border-4 border-border flex items-center justify-center shadow-lg">
+            {qrImageSrc ? (
               <img 
-                src={course.qr_code_url} 
+                src={qrImageSrc} 
                 alt="UPI Payment QR Code" 
-                className="h-44 w-44 rounded-xl"
+                onError={handleQrError}
+                className="h-48 w-48 rounded-xl object-contain"
               />
             ) : (
-              <div className="h-44 w-44 flex flex-col items-center justify-center text-black font-semibold text-xs border border-zinc-200 rounded-xl">
-                <span>QR Loading...</span>
+              <div className="h-48 w-48 flex flex-col items-center justify-center text-zinc-800 font-semibold text-xs border border-zinc-200 rounded-xl">
+                <span>Loading QR Code...</span>
               </div>
             )}
           </div>
 
-          <div className="space-y-1.5 text-xs text-zinc-500">
-            <p>Scan the code above with GPay, PhonePe, Paytm, or any BHIM UPI App.</p>
-            <p className="font-semibold text-zinc-400">Pay exactly ₹{course?.fees} INR</p>
+          <div className="space-y-1.5 text-xs text-muted-foreground text-center">
+            <p>Scan with GPay, PhonePe, Paytm, or any BHIM UPI App.</p>
+            <p className="font-bold text-foreground text-sm">Pay exactly ₹{course?.fees} INR</p>
           </div>
 
-          {/* Form field for Transaction ID */}
-          <div className="border-t border-zinc-900 pt-6 space-y-4">
+          {/* Enter Referral ID Section (Optional) */}
+          <div className="border-t border-border pt-5 space-y-4">
             <div className="space-y-1.5 text-left">
-              <label className="text-xs font-semibold text-zinc-350 block">
-                UPI Transaction ID / Ref No. <span className="text-red-500">*</span>
-              </label>
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5" htmlFor="payment-referral">
+                  <Gift className="h-3.5 w-3.5 text-emerald-400" />
+                  Enter Referral ID (Optional)
+                </label>
+                <span className="text-[10px] text-muted-foreground/70">Reward for your friend</span>
+              </div>
               <input
+                id="payment-referral"
                 type="text"
-                value={transactionId}
-                onChange={(e) => setTransactionId(e.target.value)}
-                placeholder="Enter 12-digit transaction number"
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 px-4 text-xs font-mono tracking-wider text-white focus:outline-none focus:border-blue-500"
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value)}
+                placeholder="REF-1234ABCD"
+                className="w-full bg-background border border-border rounded-xl py-3 px-4 text-xs font-mono tracking-wider text-foreground focus:outline-none focus:border-blue-500 uppercase"
               />
-              <p className="text-[10px] text-zinc-550 leading-relaxed font-semibold">
-                Please transfer the amount first, copy the UPI Ref/Transaction ID, and enter it above for verification.
-              </p>
             </div>
 
+            {/* Next Button */}
             <button
-              onClick={handleSimulatePayment}
-              disabled={!transactionId.trim() || loading}
-              className="w-full py-3.5 bg-blue-600 disabled:bg-zinc-900 disabled:text-zinc-600 disabled:border-zinc-900 hover:bg-blue-500 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer text-xs uppercase tracking-wider"
+              onClick={handleProceedNext}
+              disabled={loading}
+              className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-secondary disabled:text-muted-foreground text-white font-bold rounded-xl hover:shadow-lg hover:shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm uppercase tracking-wider"
             >
-              <CreditCard className="h-4 w-4" />
-              {loading ? 'Submitting...' : 'Submit Transaction ID'}
+              <span>Next</span>
+              <ArrowRight className="h-4 w-4" />
             </button>
+            <p className="text-[10px] text-muted-foreground/70 text-center">
+              Click &quot;Next&quot; after completing the transfer to submit for manual admin verification.
+            </p>
           </div>
         </div>
       </div>
@@ -295,7 +345,7 @@ function PaymentContent() {
 
 export default function PaymentPage() {
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col justify-center py-12 relative">
+    <div className="min-h-screen bg-background text-foreground flex flex-col justify-center py-12 relative">
       <Suspense fallback={
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>

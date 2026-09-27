@@ -10,13 +10,38 @@ import {
   CheckCircle, 
   Users, 
   ArrowRight,
-  AlertTriangle
+  AlertTriangle,
+  Check
 } from 'lucide-react';
 import { db, Course, Batch } from '@/lib/db';
 
 interface CoursePageProps {
   params: Promise<{ id: string }>;
 }
+
+const SHORT_DAY_NAMES: Record<string, string> = {
+  'Monday': 'Mon',
+  'Tuesday': 'Tue',
+  'Wednesday': 'Wed',
+  'Thursday': 'Thu',
+  'Friday': 'Fri',
+  'Saturday': 'Sat',
+  'Sunday': 'Sun',
+  'Mon': 'Mon',
+  'Tue': 'Tue',
+  'Wed': 'Wed',
+  'Thu': 'Thu',
+  'Fri': 'Fri',
+  'Sat': 'Sat',
+  'Sun': 'Sun'
+};
+
+function formatShortDay(day: string): string {
+  const trimmed = day.trim();
+  return SHORT_DAY_NAMES[trimmed] || (trimmed.length > 3 ? trimmed.slice(0, 3) : trimmed);
+}
+
+const ALL_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function CourseDetailPage({ params }: CoursePageProps) {
   const resolvedParams = use(params);
@@ -84,6 +109,8 @@ export default function CourseDetailPage({ params }: CoursePageProps) {
     );
   }
 
+  const shortCourseDays = course.days_of_week.map(formatShortDay);
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative text-left">
       <button
@@ -120,16 +147,27 @@ export default function CourseDetailPage({ params }: CoursePageProps) {
               <span className="text-sm font-bold text-foreground">{course.class_count} lectures</span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-card border border-border space-y-1">
-              <Calendar className="h-5 w-5 text-blue-400" />
-              <span className="text-[10px] text-muted-foreground/80 uppercase font-bold tracking-wider block">Days</span>
-              <span className="text-sm font-bold text-foreground shrink-0 truncate">{course.days_of_week.join(', ')}</span>
+            <div className="p-4 rounded-2xl bg-card border border-border space-y-1.5 flex flex-col justify-between overflow-hidden">
+              <div>
+                <Calendar className="h-5 w-5 text-blue-400" />
+                <span className="text-[10px] text-muted-foreground/80 uppercase font-bold tracking-wider block mt-1">Days</span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {shortCourseDays.map((day, idx) => (
+                  <span 
+                    key={idx}
+                    className="px-2 py-0.5 text-xs font-bold rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 shrink-0"
+                  >
+                    {day}
+                  </span>
+                ))}
+              </div>
             </div>
 
             <div className="p-4 rounded-2xl bg-card border border-border space-y-1">
               <Users className="h-5 w-5 text-blue-400" />
               <span className="text-[10px] text-muted-foreground/80 uppercase font-bold tracking-wider block">Timings</span>
-              <span className="text-sm font-bold text-foreground">{course.timings}</span>
+              <span className="text-sm font-bold text-foreground leading-tight block">{course.timings}</span>
             </div>
           </div>
 
@@ -162,9 +200,34 @@ export default function CourseDetailPage({ params }: CoursePageProps) {
               <span className="text-3xl font-black text-foreground">₹{course.fees}</span>
             </div>
 
+            {/* Weekly Schedule Days Overview */}
+            <div className="p-3 bg-secondary/50 rounded-2xl border border-border space-y-2">
+              <div className="flex justify-between items-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                <span>Lecture Schedule</span>
+                <span className="text-blue-400 font-semibold lowercase tracking-normal">{course.timings}</span>
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {ALL_WEEKDAYS.map((day) => {
+                  const isActive = shortCourseDays.includes(day);
+                  return (
+                    <div
+                      key={day}
+                      className={`py-1 px-0.5 text-center text-[11px] font-bold rounded-lg transition-all ${
+                        isActive
+                          ? 'bg-blue-600 text-white border border-blue-500 shadow-sm'
+                          : 'bg-background/40 text-muted-foreground/30 border border-border/40'
+                      }`}
+                    >
+                      {day}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Batch Selector */}
             <div className="space-y-3 text-left">
-              <label className="text-xs font-semibold text-muted-foreground block">Select Specific Batch</label>
+              <label className="text-xs font-semibold text-muted-foreground block">Select Available Batch</label>
               
               {batches.length === 0 ? (
                 <div className="p-4 bg-card rounded-xl border border-border text-center space-y-2">
@@ -173,25 +236,43 @@ export default function CourseDetailPage({ params }: CoursePageProps) {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {batches.map((batch) => (
-                    <button
-                      key={batch.id}
-                      onClick={() => setSelectedBatchId(batch.id)}
-                      className={`w-full text-left p-4 rounded-xl border transition-all cursor-pointer block relative ${
-                        selectedBatchId === batch.id
-                          ? 'bg-blue-600/10 border-blue-500 shadow-md shadow-blue-500/5'
-                          : 'bg-card border-border hover:border-muted-foreground'
-                      }`}
-                    >
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-sm font-bold text-foreground">{batch.name}</span>
-                        {selectedBatchId === batch.id && (
-                          <span className="h-2 w-2 rounded-full bg-blue-500"></span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground">Starts on: {batch.start_date}</p>
-                    </button>
-                  ))}
+                  {batches.map((batch) => {
+                    const isSelected = selectedBatchId === batch.id;
+                    return (
+                      <button
+                        key={batch.id}
+                        type="button"
+                        onClick={() => setSelectedBatchId(batch.id)}
+                        className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer block relative ${
+                          isSelected
+                            ? 'bg-blue-600/10 border-blue-500 shadow-md shadow-blue-500/10'
+                            : 'bg-card border-border hover:border-muted-foreground/50 hover:bg-secondary/40'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-sm font-bold text-foreground">{batch.name}</span>
+                          <div className={`h-5 w-5 rounded-full flex items-center justify-center border transition-all ${
+                            isSelected 
+                              ? 'bg-blue-600 border-blue-500 text-white' 
+                              : 'border-border bg-background'
+                          }`}>
+                            {isSelected && <Check className="h-3 w-3 stroke-[3]" />}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pt-1">
+                          <span className="font-semibold text-muted-foreground/90">Starts: {batch.start_date}</span>
+                          <div className="flex gap-1">
+                            {shortCourseDays.map((d, i) => (
+                              <span key={i} className="px-1.5 py-0.5 text-[10px] font-bold rounded-md bg-blue-500/15 border border-blue-500/30 text-blue-400">
+                                {d}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -225,3 +306,4 @@ export default function CourseDetailPage({ params }: CoursePageProps) {
     </div>
   );
 }
+

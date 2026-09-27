@@ -110,7 +110,7 @@ body {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #0f3b8c 0%, #0da17d 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }

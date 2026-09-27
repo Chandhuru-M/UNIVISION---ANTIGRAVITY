@@ -12,6 +12,7 @@ import {
   GraduationCap, 
   Wallet, 
   Gift,
+  ShieldAlert,
   Sun,
   Moon,
   LogOut
@@ -75,7 +76,7 @@ export default function DashboardSidebar({
             title: 'FINANCE',
             items: [
               { name: 'Wallets', icon: Wallet, tabKey: 'redeem' },
-              { name: 'Referrals', icon: Gift, tabKey: 'verifications' }
+              { name: 'Payment Verification', icon: ShieldAlert, tabKey: 'verifications' }
             ]
           }
         ];

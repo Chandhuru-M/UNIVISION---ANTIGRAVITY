@@ -28,19 +28,32 @@ export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
+    const checkAuth = () => {
+      const user = db.getCurrentUser();
+      setIsLoggedIn(!!user);
+    };
+
     async function loadData() {
       try {
         const data = await db.getCourses();
         setCourses(data);
-        const user = db.getCurrentUser();
-        setIsLoggedIn(!!user);
+        checkAuth();
       } catch (err) {
         console.error('Failed to load courses:', err);
       } finally {
         setLoading(false);
       }
     }
+
     loadData();
+
+    window.addEventListener('univision_auth_change', checkAuth);
+    window.addEventListener('storage', checkAuth);
+
+    return () => {
+      window.removeEventListener('univision_auth_change', checkAuth);
+      window.removeEventListener('storage', checkAuth);
+    };
   }, []);
 
   const handleBookCourse = (courseId: string) => {
@@ -108,7 +121,7 @@ export default function Home() {
             {/* Description Text */}
             <div className="lg:col-span-7 space-y-6 text-sm text-muted-foreground leading-relaxed font-medium">
               <p>
-                <strong className="text-foreground font-black">Univision Counsel</strong> is an EdTech platform established with the vision of making quality education accessible to every student at an affordable cost, and in many cases, completely free of charge. Founded in 2025 by <strong className="text-foreground font-black">Mohamed Jaris</strong> during his pre-final year at Chennai Institute of Technology, the organization is driven by students, for students.
+                <strong className="text-foreground font-black">Univision Counsel</strong> is an EdTech platform established with the vision of making quality education accessible to every student at an affordable cost, and in many cases, completely free of charge. Founded in 2025 by <strong className="text-foreground font-black">Mohamed Jaris</strong> during his pre-final year in Chennai, the organization is driven by students, for students.
               </p>
               <p>
                 The company operates through a collaborative network of students from various academic branches and top-tier institutions across India. By combining collective experiences, insights, and practical knowledge, Univision Counsel aims to guide students in building a clear roadmap toward achieving their academic and career goals.
@@ -134,7 +147,7 @@ export default function Home() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground/80">Institution Origin</span>
-                    <span className="text-foreground font-bold">Chennai Institute of Technology</span>
+                    <span className="text-foreground font-bold">Chennai</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground/80">Founded Year</span>

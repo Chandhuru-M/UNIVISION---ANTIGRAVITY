@@ -20,7 +20,8 @@ import {
   Trash2,
   CheckCircle,
   ClipboardList,
-  ShieldAlert
+  ShieldAlert,
+  QrCode
 } from 'lucide-react';
 import { db, Course, Batch, Profile, Enrollment, Redemption, Wallet } from '@/lib/db';
 import DashboardSidebar from '@/components/DashboardSidebar';
@@ -35,6 +36,7 @@ export default function AdminDashboard() {
   // Tab control
   const [activeTab, setActiveTab] = useState<ActiveTab>('analytics');
   const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'student' | 'mentor' | 'admin'>('all');
+  const [verificationFilter, setVerificationFilter] = useState<'pending' | 'completed' | 'failed' | 'all'>('pending');
 
   // Shared state
   const [courses, setCourses] = useState<Course[]>([]);
@@ -47,6 +49,10 @@ export default function AdminDashboard() {
   // Filter state for Analytics tab
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
+
+  // QR Manager state
+  const [qrEditCourseId, setQrEditCourseId] = useState<string>('');
+  const [qrEditUrl, setQrEditUrl] = useState<string>('');
 
   // Analytics computed results
   const [filteredBatch, setFilteredBatch] = useState<Batch | null>(null);
@@ -177,27 +183,15 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!selectedCourseId) return;
 
-    const matchedCourse = courses.find(c => c.id === selectedCourseId) || null;
-    setFilteredCourse(matchedCourse);
+    if (selectedCourseId === 'all') {
+      setFilteredCourse(null);
+      setFilteredBatch(null);
 
-    const relatedBatches = batches.filter(b => b.course_id === selectedCourseId);
-    
-    // Auto-update batch dropdown if the current batch is not in the related course
-    let currentBatch = relatedBatches.find(b => b.id === selectedBatchId) || null;
-    if (!currentBatch && relatedBatches.length > 0) {
-      currentBatch = relatedBatches[0];
-      setSelectedBatchId(relatedBatches[0].id);
-    }
-    setFilteredBatch(currentBatch);
-
-    // Compute Roster and Stats
-    if (currentBatch) {
-      const batchEnrollments = enrollments.filter(e => e.batch_id === currentBatch?.id && e.payment_status === 'completed');
-      
-      const rosterData = batchEnrollments.map(e => {
+      const allCompletedEnrollments = enrollments.filter(e => e.payment_status === 'completed');
+      const rosterData = allCompletedEnrollments.map(e => {
         const student = profiles.find(p => p.id === e.student_id);
         return {
-          id: e.id, // enrollment ID
+          id: e.id,
           studentId: e.student_id,
           name: student?.name || 'Unknown Student',
           email: student?.email || 'N/A',
@@ -207,20 +201,61 @@ export default function AdminDashboard() {
       });
       setRoster(rosterData);
 
-      // Calculations
-      const totalEnrolled = batchEnrollments.length;
-      const totalReferrals = batchEnrollments.filter(e => e.referred_by_id !== null).length;
-      const totalRevenue = batchEnrollments.reduce((sum, e) => sum + e.amount_paid, 0);
+      const totalEnrolled = allCompletedEnrollments.length;
+      const totalReferrals = allCompletedEnrollments.filter(e => e.referred_by_id !== null).length;
+      const totalRevenue = allCompletedEnrollments.reduce((sum, e) => sum + e.amount_paid, 0);
 
       setStats({
         totalEnrolled,
         totalReferrals,
         totalRevenue
       });
-    } else {
-      setRoster([]);
-      setStats({ totalEnrolled: 0, totalReferrals: 0, totalRevenue: 0 });
+      return;
     }
+
+    const matchedCourse = courses.find(c => c.id === selectedCourseId) || null;
+    setFilteredCourse(matchedCourse);
+
+    const relatedBatches = batches.filter(b => b.course_id === selectedCourseId);
+    
+    // Auto-update batch dropdown if the current batch is not in the related course and not 'all'
+    let currentBatch = relatedBatches.find(b => b.id === selectedBatchId) || null;
+    if (selectedBatchId !== 'all' && !currentBatch && relatedBatches.length > 0) {
+      currentBatch = relatedBatches[0];
+      setSelectedBatchId(relatedBatches[0].id);
+    }
+    setFilteredBatch(currentBatch);
+
+    // Compute Roster and Stats
+    let targetEnrollments: Enrollment[] = [];
+    if (selectedBatchId === 'all' || !currentBatch) {
+      targetEnrollments = enrollments.filter(e => e.course_id === selectedCourseId && e.payment_status === 'completed');
+    } else {
+      targetEnrollments = enrollments.filter(e => e.batch_id === currentBatch.id && e.payment_status === 'completed');
+    }
+
+    const rosterData = targetEnrollments.map(e => {
+      const student = profiles.find(p => p.id === e.student_id);
+      return {
+        id: e.id, // enrollment ID
+        studentId: e.student_id,
+        name: student?.name || 'Unknown Student',
+        email: student?.email || 'N/A',
+        contact: student?.contact_number,
+        enrolledAt: e.created_at || new Date().toISOString()
+      };
+    });
+    setRoster(rosterData);
+
+    const totalEnrolled = targetEnrollments.length;
+    const totalReferrals = targetEnrollments.filter(e => e.referred_by_id !== null).length;
+    const totalRevenue = targetEnrollments.reduce((sum, e) => sum + e.amount_paid, 0);
+
+    setStats({
+      totalEnrolled,
+      totalReferrals,
+      totalRevenue
+    });
 
   }, [selectedCourseId, selectedBatchId, courses, batches, enrollments, profiles]);
 
@@ -274,7 +309,7 @@ export default function AdminDashboard() {
 
   // Export Student roster to CSV (pure client side)
   const handleExportCSV = () => {
-    if (!filteredBatch || roster.length === 0) return;
+    if (roster.length === 0) return;
     
     const headers = ['Student ID', 'Full Name', 'Email Address', 'Contact Number', 'Enrolled At'];
     const rows = roster.map(s => [
@@ -294,7 +329,9 @@ export default function AdminDashboard() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Roster_${filteredCourse?.name.replace(/\s+/g, '_')}_${filteredBatch.name.replace(/\s+/g, '_')}.csv`);
+    const courseLabel = filteredCourse ? filteredCourse.name.replace(/\s+/g, '_') : 'All_Courses';
+    const batchLabel = filteredBatch ? filteredBatch.name.replace(/\s+/g, '_') : 'All_Batches';
+    link.setAttribute('download', `Roster_${courseLabel}_${batchLabel}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -530,10 +567,11 @@ export default function AdminDashboard() {
                   <select
                     value={selectedCourseId}
                     onChange={(e) => setSelectedCourseId(e.target.value)}
-                    className="w-full bg-background border border-input rounded-xl py-2 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100 border border-zinc-800 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                   >
+                    <option value="all" className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100 font-bold">All Courses (Overall Revenue)</option>
                     {courses.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
+                      <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">{c.name}</option>
                     ))}
                   </select>
                 </div>
@@ -543,19 +581,26 @@ export default function AdminDashboard() {
                   <select
                     value={selectedBatchId}
                     onChange={(e) => setSelectedBatchId(e.target.value)}
-                    className="w-full bg-background border border-input rounded-xl py-2 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100 border border-zinc-800 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                   >
-                    {batches.filter(b => b.course_id === selectedCourseId).map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                    {batches.filter(b => b.course_id === selectedCourseId).length === 0 && (
-                      <option value="">No Batches Active</option>
+                    {selectedCourseId === 'all' ? (
+                      <option value="all" className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">All Batches</option>
+                    ) : (
+                      <>
+                        <option value="all" className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">All Batches</option>
+                        {batches.filter(b => b.course_id === selectedCourseId).map(b => (
+                          <option key={b.id} value={b.id} className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">{b.name}</option>
+                        ))}
+                        {batches.filter(b => b.course_id === selectedCourseId).length === 0 && (
+                          <option value="" className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">No Batches Active</option>
+                        )}
+                      </>
                     )}
                   </select>
                 </div>
               </div>
 
-              {filteredBatch && roster.length > 0 && (
+              {roster.length > 0 && (
                 <button
                   onClick={handleExportCSV}
                   className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0 w-full sm:w-auto justify-center shadow-sm"
@@ -773,96 +818,192 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
-
           </div>
         )}
 
         {/* -------------------- 1.5 VERIFY PAYMENTS TAB -------------------- */}
         {activeTab === 'verifications' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center pb-2 border-b border-zinc-900">
+            <div className="p-6 bg-card rounded-3xl border border-border flex flex-col sm:flex-row gap-4 items-center justify-between">
               <div>
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                   <ShieldAlert className="h-5 w-5 text-amber-500" />
                   Manual Payment Verifications
                 </h2>
-                <p className="text-xs text-zinc-550">Verify student UPI transaction receipts and authorize cohort access</p>
+                <p className="text-xs text-muted-foreground">Verify student payment requests by date & time and authorize cohort access</p>
+              </div>
+
+              {/* Status Filter Buttons */}
+              <div className="flex flex-wrap gap-2 shrink-0">
+                {(['pending', 'completed', 'failed', 'all'] as const).map((statusVal) => (
+                  <button
+                    key={statusVal}
+                    type="button"
+                    onClick={() => setVerificationFilter(statusVal)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer capitalize ${
+                      verificationFilter === statusVal
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-secondary text-muted-foreground border border-border hover:text-foreground'
+                    }`}
+                  >
+                    {statusVal === 'pending'
+                      ? 'Pending Verification'
+                      : statusVal === 'completed'
+                      ? 'Verified'
+                      : statusVal === 'failed'
+                      ? 'Rejected'
+                      : 'All Requests'}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {enrollments.filter(e => e.payment_status === 'pending').length === 0 ? (
-              <div className="p-16 text-center bg-zinc-900/20 rounded-3xl border border-zinc-900 space-y-4 max-w-xl mx-auto">
+            {enrollments.filter(e => verificationFilter === 'all' || e.payment_status === verificationFilter).length === 0 ? (
+              <div className="p-16 text-center bg-card rounded-3xl border border-border space-y-4 max-w-xl mx-auto">
                 <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto" />
-                <p className="text-zinc-400 font-medium">All payments verified!</p>
-                <p className="text-xs text-zinc-550">There are no pending student course enrollments requiring receipt verification.</p>
+                <p className="text-foreground font-medium">No payment requests found.</p>
+                <p className="text-xs text-muted-foreground">There are no course payment records matching the selected status filter.</p>
               </div>
             ) : (
-              <div className="glass-panel rounded-3xl border border-zinc-800 overflow-hidden">
+              <div className="glass-panel rounded-3xl border border-border overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr className="bg-zinc-900 border-b border-zinc-850 text-zinc-500 uppercase font-black tracking-wider text-[10px]">
+                      <tr className="bg-secondary/60 border-b border-border text-muted-foreground uppercase font-black tracking-wider text-[10px]">
                         <th className="p-4">Student Details</th>
+                        <th className="p-4">Phone Number</th>
+                        <th className="p-4">Request Date & Time</th>
                         <th className="p-4">Course & Batch</th>
+                        <th className="p-4">Referral ID</th>
                         <th className="p-4 text-right">Fee Due</th>
-                        <th className="p-4">Transaction ID</th>
+                        <th className="p-4 text-center">Status</th>
                         <th className="p-4 text-center">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-900 font-medium">
-                      {enrollments.filter(e => e.payment_status === 'pending').map((enrollment) => {
-                        const studentProfile = profiles.find(p => p.id === enrollment.student_id);
-                        const sInfo = {
-                          name: studentProfile?.name || 'Unknown Student',
-                          email: studentProfile?.email || '',
-                          contact: studentProfile?.contact_number || 'N/A'
-                        };
-                        const courseName = courses.find(c => c.id === enrollment.course_id)?.name || 'Unknown';
-                        const batchName = batches.find(b => b.id === enrollment.batch_id)?.name || 'Unknown';
-                        return (
-                          <tr key={enrollment.id} className="hover:bg-zinc-900/35 transition-colors">
-                            <td className="p-4 space-y-0.5">
-                              <p className="font-bold text-white text-sm">{sInfo.name}</p>
-                              <p className="text-[10px] text-zinc-500">{sInfo.email} • {sInfo.contact}</p>
-                            </td>
-                            <td className="p-4 space-y-0.5">
-                              <p className="text-white">{courseName}</p>
-                              <p className="text-[10px] text-blue-450 uppercase tracking-wider font-bold">{batchName}</p>
-                            </td>
-                            <td className="p-4 text-right font-bold text-emerald-450 text-sm">
-                              ₹{enrollment.amount_paid.toFixed(2)}
-                            </td>
-                            <td className="p-4">
-                              <span className="font-mono text-zinc-300 font-bold bg-zinc-900 px-2 py-1 rounded select-all">
-                                {enrollment.transaction_id || 'N/A'}
-                              </span>
-                            </td>
-                            <td className="p-4 text-center">
-                              <button
-                                onClick={async () => {
-                                  setActionLoading(true);
-                                  try {
-                                    const success = await db.approveEnrollment(enrollment.id);
-                                    if (success) {
-                                      setMessage({ type: 'success', text: `Enrollment for ${sInfo.name} approved successfully.` });
-                                      await refreshDashboardData();
-                                    }
-                                  } catch (err) {
-                                    console.error(err);
-                                    setMessage({ type: 'error', text: 'Approval failed.' });
-                                  } finally {
-                                    setActionLoading(false);
-                                  }
-                                }}
-                                disabled={actionLoading}
-                                className="px-3 py-1.5 bg-emerald-650 hover:bg-emerald-500 text-white font-bold rounded-lg transition-all text-[10px] cursor-pointer inline-flex items-center gap-1"
-                              >
-                                Approve Enrollment
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                    <tbody className="divide-y divide-border font-medium">
+                      {enrollments
+                        .filter(e => verificationFilter === 'all' || e.payment_status === verificationFilter)
+                        .map((enrollment) => {
+                          const studentProfile = profiles.find(p => p.id === enrollment.student_id);
+                          const sInfo = {
+                            name: studentProfile?.name || 'Unknown Student',
+                            email: studentProfile?.email || '',
+                            contact: studentProfile?.contact_number || 'N/A'
+                          };
+                          const courseName = courses.find(c => c.id === enrollment.course_id)?.name || 'Unknown Course';
+                          const batchName = batches.find(b => b.id === enrollment.batch_id)?.name || 'Unknown Batch';
+                          
+                          // Referral ID lookup
+                          const referrerProfile = enrollment.referred_by_id 
+                            ? profiles.find(p => p.id === enrollment.referred_by_id) 
+                            : null;
+                          const referralCodeDisplay = referrerProfile?.referral_code || 'None';
+
+                          // Timestamp formatting
+                          const reqDate = enrollment.created_at
+                            ? new Date(enrollment.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                            : 'N/A';
+                          const reqTime = enrollment.created_at
+                            ? new Date(enrollment.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                            : 'N/A';
+
+                          return (
+                            <tr key={enrollment.id} className="hover:bg-secondary/30 transition-colors">
+                              <td className="p-4 space-y-0.5">
+                                <p className="font-bold text-foreground text-sm">{sInfo.name}</p>
+                                <p className="text-[10px] text-muted-foreground">{sInfo.email}</p>
+                              </td>
+                              <td className="p-4 font-semibold text-foreground">
+                                {sInfo.contact}
+                              </td>
+                              <td className="p-4 space-y-0.5">
+                                <p className="text-foreground font-bold">{reqDate}</p>
+                                <p className="text-[10px] text-muted-foreground font-mono">{reqTime}</p>
+                              </td>
+                              <td className="p-4 space-y-0.5">
+                                <p className="text-foreground font-bold">{courseName}</p>
+                                <p className="text-[10px] text-blue-400 uppercase tracking-wider font-bold">{batchName}</p>
+                              </td>
+                              <td className="p-4">
+                                <span className="font-mono text-emerald-400 font-bold bg-secondary px-2 py-1 rounded select-all border border-border">
+                                  {referralCodeDisplay}
+                                </span>
+                              </td>
+                              <td className="p-4 text-right font-bold text-foreground text-sm">
+                                ₹{enrollment.amount_paid.toFixed(2)}
+                              </td>
+                              <td className="p-4 text-center">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                  enrollment.payment_status === 'pending'
+                                    ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                                    : enrollment.payment_status === 'completed'
+                                    ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                    : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                                }`}>
+                                  {enrollment.payment_status === 'pending'
+                                    ? 'Pending Verification'
+                                    : enrollment.payment_status === 'completed'
+                                    ? 'Verified'
+                                    : 'Rejected'}
+                                </span>
+                              </td>
+                              <td className="p-4 text-center">
+                                {enrollment.payment_status === 'pending' ? (
+                                  <div className="flex gap-2 justify-center">
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        setActionLoading(true);
+                                        try {
+                                          const success = await db.approveEnrollment(enrollment.id);
+                                          if (success) {
+                                            setMessage({ type: 'success', text: `Payment verified for ${sInfo.name}. Cohort access granted!` });
+                                            await refreshDashboardData();
+                                          }
+                                        } catch (err) {
+                                          console.error(err);
+                                          setMessage({ type: 'error', text: 'Verification approval failed.' });
+                                        } finally {
+                                          setActionLoading(false);
+                                        }
+                                      }}
+                                      disabled={actionLoading}
+                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all text-[10px] cursor-pointer"
+                                    >
+                                      Verify Payment
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (confirm(`Reject payment request from ${sInfo.name}?`)) {
+                                          setActionLoading(true);
+                                          try {
+                                            const success = await db.rejectEnrollment(enrollment.id);
+                                            if (success) {
+                                              setMessage({ type: 'success', text: `Payment request for ${sInfo.name} rejected.` });
+                                              await refreshDashboardData();
+                                            }
+                                          } catch (err) {
+                                            console.error(err);
+                                            setMessage({ type: 'error', text: 'Rejection failed.' });
+                                          } finally {
+                                            setActionLoading(false);
+                                          }
+                                        }
+                                      }}
+                                      disabled={actionLoading}
+                                      className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-all text-[10px] cursor-pointer"
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground font-semibold">Processed</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
                 </div>
@@ -1344,6 +1485,91 @@ export default function AdminDashboard() {
         {/* -------------------- 4. COURSES & BATCHES TAB -------------------- */}
         {activeTab === 'courses' && (
           <div className="space-y-8">
+
+            {/* Payment QR Code Manager Card */}
+            <div className="glass-panel rounded-3xl p-6 border border-border space-y-4 text-left">
+              <div className="flex items-center gap-2">
+                <QrCode className="h-5 w-5 text-blue-400" />
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">Configure Course Payment QR Code</h3>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed font-medium">
+                Set or update the UPI QR Code URL or image for any published course. Students checking out will see this configured QR code.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end pt-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-muted-foreground">Select Course</label>
+                  <select
+                    value={qrEditCourseId}
+                    onChange={(e) => {
+                      const cId = e.target.value;
+                      setQrEditCourseId(cId);
+                      const targetCourse = courses.find(c => c.id === cId);
+                      setQrEditUrl(targetCourse?.qr_code_url || '');
+                    }}
+                    className="w-full bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100 border border-zinc-800 rounded-xl py-2 px-3 text-xs focus:outline-none"
+                  >
+                    {courses.map(c => (
+                      <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-xs font-semibold text-muted-foreground">Payment QR Code Image URL / UPI Link</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={qrEditUrl}
+                      onChange={(e) => setQrEditUrl(e.target.value)}
+                      placeholder="https://api.qrserver.com/... or upi://pay?pa=..."
+                      className="w-full bg-background border border-border rounded-xl py-2 px-3 text-xs text-foreground focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const targetId = qrEditCourseId || (courses.length > 0 ? courses[0].id : '');
+                        if (!targetId) return;
+                        setActionLoading(true);
+                        try {
+                          const success = await db.updateCourseQrCode(targetId, qrEditUrl.trim());
+                          if (success) {
+                            setMessage({ type: 'success', text: 'Payment QR Code updated successfully!' });
+                            await refreshDashboardData();
+                          }
+                        } catch (err) {
+                          console.error(err);
+                          setMessage({ type: 'error', text: 'Failed to update QR code.' });
+                        } finally {
+                          setActionLoading(false);
+                        }
+                      }}
+                      disabled={actionLoading}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer"
+                    >
+                      Save QR Code
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live QR Preview */}
+              {qrEditUrl && (
+                <div className="pt-2 flex items-center gap-4 border-t border-border mt-3">
+                  <span className="text-xs font-semibold text-muted-foreground">Live QR Preview:</span>
+                  <div className="bg-white p-2 rounded-xl border border-border">
+                    <img
+                      src={qrEditUrl}
+                      alt="QR Preview"
+                      className="h-20 w-20 object-contain"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
             
             {/* Create Course and Batch Dual Panels */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -1445,7 +1671,7 @@ export default function AdminDashboard() {
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-zinc-400 block">Days of the Week</label>
                     <div className="flex flex-wrap gap-2">
-                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => (
+                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
                         <button
                           key={day}
                           type="button"
@@ -1498,12 +1724,12 @@ export default function AdminDashboard() {
                     <select
                       value={newBatchCourseId}
                       onChange={(e) => setNewBatchCourseId(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
+                      className="w-full bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100 border border-zinc-800 rounded-xl py-2 px-3 text-xs focus:outline-none"
                       required
                     >
-                      <option value="" disabled>-- Select Course --</option>
+                      <option value="" disabled className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">-- Select Course --</option>
                       {courses.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
+                        <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">{c.name}</option>
                       ))}
                     </select>
                   </div>
@@ -1513,11 +1739,11 @@ export default function AdminDashboard() {
                     <select
                       value={newBatchMentorId}
                       onChange={(e) => setNewBatchMentorId(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
+                      className="w-full bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100 border border-zinc-800 rounded-xl py-2 px-3 text-xs focus:outline-none"
                     >
-                      <option value="">-- No Mentor (Awaiting Assignment) --</option>
+                      <option value="" className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">-- No Mentor (Awaiting Assignment) --</option>
                       {mentors.map(m => (
-                        <option key={m.id} value={m.id}>{m.name} ({m.specialization})</option>
+                        <option key={m.id} value={m.id} className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">{m.name} ({m.specialization})</option>
                       ))}
                     </select>
                   </div>
@@ -1678,12 +1904,12 @@ export default function AdminDashboard() {
               <select
                 value={promotionCoreTeam}
                 onChange={(e) => setPromotionCoreTeam(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-3 px-4 text-xs text-white focus:outline-none cursor-pointer"
+                className="w-full bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100 border border-zinc-800 rounded-xl py-3 px-4 text-xs focus:outline-none cursor-pointer"
                 autoFocus
               >
-                <option value="PR Team">PR Team</option>
-                <option value="Marketing Team">Marketing Team</option>
-                <option value="Course Validation Team">Course Validation Team</option>
+                <option value="PR Team" className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">PR Team</option>
+                <option value="Marketing Team" className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">Marketing Team</option>
+                <option value="Course Validation Team" className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">Course Validation Team</option>
               </select>
             </div>
 
