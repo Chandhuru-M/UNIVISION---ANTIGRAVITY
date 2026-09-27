@@ -352,16 +352,36 @@ export const db = {
   async getProfileByReferralCode(code: string): Promise<Profile | null> {
     if (!code || !code.trim()) return null;
     const cleanCode = code.trim().toUpperCase();
+    const cleanCodeNoRef = cleanCode.replace(/^REF-/, '');
     const profiles = await this.getProfiles();
     return profiles.find(p => {
-      if (!p.referral_code) return false;
-      const pCode = p.referral_code.trim().toUpperCase();
-      return (
-        pCode === cleanCode ||
-        pCode === `REF-${cleanCode}` ||
-        `REF-${pCode}` === cleanCode ||
-        pCode.replace(/^REF-/, '') === cleanCode.replace(/^REF-/, '')
-      );
+      // 1. Check referral_code
+      if (p.referral_code) {
+        const pCode = p.referral_code.trim().toUpperCase();
+        const pCodeNoRef = pCode.replace(/^REF-/, '');
+        if (
+          pCode === cleanCode ||
+          pCode === `REF-${cleanCode}` ||
+          `REF-${pCode}` === cleanCode ||
+          pCodeNoRef === cleanCodeNoRef
+        ) {
+          return true;
+        }
+      }
+      // 2. Check profile ID
+      const pId = p.id.toUpperCase();
+      if (pId === cleanCode || pId.replace(/^REF-/, '') === cleanCodeNoRef) {
+        return true;
+      }
+      // 3. Check email
+      if (p.email && p.email.toUpperCase() === cleanCode) {
+        return true;
+      }
+      // 4. Check name
+      if (p.name && p.name.toUpperCase() === cleanCode) {
+        return true;
+      }
+      return false;
     }) || null;
   },
 
@@ -427,9 +447,16 @@ export const db = {
 
     const netCalculatedBalance = Math.max(0, parseFloat((calculatedRewards - approvedRedeemed).toFixed(2)));
 
-    // Ensure wallet balance is set to at least netCalculatedBalance
-    if (netCalculatedBalance > wallet.balance) {
-      wallet.balance = netCalculatedBalance;
+    // Ensure wallet balance is set to the highest recorded balance
+    const localWallets = getLocalStorage<Wallet[]>('univision_wallets', []);
+    let localW = localWallets.find(w => w.student_id === studentId);
+    
+    const finalBalance = Math.max(Number(wallet.balance || 0), Number(localW?.balance || 0), netCalculatedBalance);
+    wallet.balance = finalBalance;
+
+    if (localW) {
+      localW.balance = finalBalance;
+      setLocalStorage('univision_wallets', localWallets);
     }
 
     return wallet;
@@ -480,12 +507,35 @@ export const db = {
     const localEnrollments = getLocalStorage<Enrollment[]>('univision_enrollments', []);
     const filteredLocal = studentId ? localEnrollments.filter(e => e.student_id === studentId) : localEnrollments;
 
-    // Merge Supabase and Local storage enrollments seamlessly by ID
+    // Merge Supabase and Local storage enrollments seamlessly by ID, preserving referred_by_id
     const map = new Map<string, Enrollment>();
     filteredLocal.forEach(e => map.set(e.id, e));
-    dbEnrollments.forEach(e => map.set(e.id, e));
+    dbEnrollments.forEach(e => {
+      const existing = map.get(e.id);
+      if (existing) {
+        map.set(e.id, {
+          ...e,
+          referred_by_id: e.referred_by_id || existing.referred_by_id || null
+        });
+      } else {
+        map.set(e.id, e);
+      }
+    });
 
-    return Array.from(map.values());
+    const result = Array.from(map.values());
+
+    // Auto-enrich enrollment referred_by_id with student profile's referred_by_id if missing
+    const profiles = await this.getProfiles();
+    result.forEach(e => {
+      if (!e.referred_by_id) {
+        const studentP = profiles.find(p => p.id === e.student_id);
+        if (studentP && studentP.referred_by_id) {
+          e.referred_by_id = studentP.referred_by_id;
+        }
+      }
+    });
+
+    return result;
   },
 
   async enrollStudent(
@@ -520,6 +570,31 @@ export const db = {
       const studentProfile = await this.getProfile(studentId);
       if (studentProfile && studentProfile.referred_by_id) {
         referredById = studentProfile.referred_by_id;
+      }
+    }
+
+    // Instantly save referred_by_id onto student profile in both local storage and Supabase!
+    if (referredById) {
+      const studentProfile = await this.getProfile(studentId);
+      if (studentProfile) {
+        studentProfile.referred_by_id = referredById;
+        
+        // Update local storage profiles
+        const students = getLocalStorage<Profile[]>('univision_students_profiles', []);
+        const sIdx = students.findIndex(s => s.id === studentId);
+        if (sIdx !== -1) {
+          students[sIdx].referred_by_id = referredById;
+          setLocalStorage('univision_students_profiles', students);
+        }
+
+        // Update Supabase profiles table
+        if (supabase) {
+          try {
+            await supabase.from('profiles').update({ referred_by_id: referredById }).eq('id', studentId);
+          } catch (e) {
+            console.error('Failed to sync student profile referred_by_id:', e);
+          }
+        }
       }
     }
 
@@ -583,7 +658,7 @@ export const db = {
               role: studentProfile.role || 'student',
               contact_number: studentProfile.contact_number || null,
               referral_code: studentProfile.referral_code || null,
-              referred_by_id: studentProfile.referred_by_id || null,
+              referred_by_id: referredById || studentProfile.referred_by_id || null,
               created_at: studentProfile.created_at || new Date().toISOString()
             }, { onConflict: 'id' });
           } catch (e) {}
@@ -706,6 +781,11 @@ export const db = {
           }
         }
       }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('univision_data_change'));
+      window.dispatchEvent(new Event('storage'));
     }
 
     return true;

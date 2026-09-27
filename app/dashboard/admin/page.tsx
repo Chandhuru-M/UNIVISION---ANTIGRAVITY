@@ -930,9 +930,10 @@ export default function AdminDashboard() {
                           // Referral ID lookup (check enrollment.referred_by_id first, fallback to studentProfile.referred_by_id)
                           const effectiveReferrerId = enrollment.referred_by_id || studentProfile?.referred_by_id;
                           const referrerProfile = effectiveReferrerId 
-                            ? profiles.find(p => p.id === effectiveReferrerId) 
+                            ? profiles.find(p => p.id === effectiveReferrerId || p.referral_code === effectiveReferrerId) 
                             : null;
-                          const referralCodeDisplay = referrerProfile?.referral_code || 'None';
+                          const referralCodeDisplay = referrerProfile?.referral_code 
+                            || (effectiveReferrerId ? (effectiveReferrerId.toUpperCase().startsWith('REF-') ? effectiveReferrerId.toUpperCase() : `REF-${effectiveReferrerId.toUpperCase()}`) : 'None');
 
                           // Timestamp formatting
                           const reqDate = enrollment.created_at
