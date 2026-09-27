@@ -259,18 +259,26 @@ export const db = {
 
   // --- Batches ---
   async getBatches(courseId?: string): Promise<Batch[]> {
+    let dbBatches: Batch[] = [];
     if (supabase) {
-      let query = supabase.from('batches').select('*');
-      if (courseId) query = query.eq('course_id', courseId);
-      const { data, error } = await supabase.from('batches').select('*');
-      if (!error && data) {
-        const result = data as Batch[];
-        return courseId ? result.filter(b => b.course_id === courseId) : result;
+      try {
+        let query = supabase.from('batches').select('*');
+        if (courseId) query = query.eq('course_id', courseId);
+        const { data, error } = await query;
+        if (!error && data) dbBatches = data as Batch[];
+        else if (error) console.error('Supabase getBatches error:', error.message || JSON.stringify(error));
+      } catch (e) {
+        console.error('Supabase getBatches exception:', e);
       }
-      console.error('Supabase getBatches error:', error);
     }
-    const batches = getLocalStorage<Batch[]>('univision_batches', INITIAL_BATCHES);
-    return courseId ? batches.filter(b => b.course_id === courseId) : batches;
+    const localBatches = getLocalStorage<Batch[]>('univision_batches', INITIAL_BATCHES);
+    const filteredLocal = courseId ? localBatches.filter(b => b.course_id === courseId) : localBatches;
+
+    const map = new Map<string, Batch>();
+    filteredLocal.forEach(b => map.set(b.id, b));
+    dbBatches.forEach(b => map.set(b.id, b));
+
+    return Array.from(map.values());
   },
 
   async addBatch(batch: Omit<Batch, 'id'>): Promise<Batch> {
@@ -288,9 +296,51 @@ export const db = {
     };
 
     if (supabase) {
-      const { data, error } = await supabase.from('batches').insert(newBatch).select().single();
-      if (!error && data) return data as Batch;
-      console.error('Supabase addBatch error:', error);
+      try {
+        // 1. Pre-sync parent course to Supabase if missing
+        if (newBatch.course_id) {
+          const course = await this.getCourseById(newBatch.course_id);
+          if (course) {
+            try {
+              await supabase.from('courses').upsert({
+                id: course.id,
+                name: course.name,
+                description: course.description,
+                duration: course.duration,
+                class_count: course.class_count,
+                days_of_week: course.days_of_week,
+                timings: course.timings,
+                fees: course.fees,
+                qr_code_url: course.qr_code_url || null
+              }, { onConflict: 'id' });
+            } catch (e) {}
+          }
+        }
+
+        // 2. Pre-sync mentor profile to Supabase if missing
+        if (cleanedMentorId) {
+          const mentorProfile = await this.getProfile(cleanedMentorId);
+          if (mentorProfile) {
+            try {
+              await supabase.from('profiles').upsert({
+                id: mentorProfile.id,
+                name: mentorProfile.name,
+                email: mentorProfile.email,
+                role: mentorProfile.role || 'mentor',
+                contact_number: mentorProfile.contact_number || null,
+                specialization: mentorProfile.specialization || null,
+                created_at: mentorProfile.created_at || new Date().toISOString()
+              }, { onConflict: 'id' });
+            } catch (e) {}
+          }
+        }
+
+        const { data, error } = await supabase.from('batches').insert(newBatch).select().single();
+        if (!error && data) return data as Batch;
+        if (error) console.error('Supabase addBatch error:', error.message || JSON.stringify(error));
+      } catch (e) {
+        console.error('Supabase addBatch exception:', e);
+      }
     }
 
     const batches = getLocalStorage<Batch[]>('univision_batches', INITIAL_BATCHES);
