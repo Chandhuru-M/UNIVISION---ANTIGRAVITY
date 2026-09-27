@@ -74,9 +74,12 @@ export default function CoreDashboard() {
         const allEnrollments = await db.getEnrollments();
         const allCourses = await db.getCourses();
 
-        // Referrals count: profiles referred
         const referredProfiles = allProfiles.filter(p => p.referred_by_id === currentUser.id);
-        setReferralsCount(referredProfiles.length);
+        const approvedReferredSet = new Set([
+          ...referredProfiles.map(p => p.id),
+          ...allEnrollments.filter(e => e.referred_by_id === currentUser.id && e.payment_status === 'completed').map(e => e.student_id)
+        ]);
+        setReferralsCount(approvedReferredSet.size);
 
         // Successful referrals list: completed enrollments referred by this core user
         const successfulReferrals = allEnrollments

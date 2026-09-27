@@ -12,3 +12,4 @@ export const supabase = isValidHttpUrl(supabaseUrl) && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
+  

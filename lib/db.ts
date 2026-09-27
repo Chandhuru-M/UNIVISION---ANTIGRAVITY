@@ -511,12 +511,94 @@ export const db = {
 
   async approveEnrollment(enrollmentId: string): Promise<boolean> {
     if (supabase) {
-      const { error } = await supabase
+      const { data: targetEnrollment, error: fetchErr } = await supabase
         .from('enrollments')
-        .update({ payment_status: 'completed' })
-        .eq('id', enrollmentId);
-      if (!error) return true;
-      console.error('Supabase approveEnrollment error:', error);
+        .select('*')
+        .eq('id', enrollmentId)
+        .single();
+
+      if (!fetchErr && targetEnrollment) {
+        const { error } = await supabase
+          .from('enrollments')
+          .update({ payment_status: 'completed' })
+          .eq('id', enrollmentId);
+
+        if (!error) {
+          if (targetEnrollment.referred_by_id) {
+            const referrerId = targetEnrollment.referred_by_id;
+            const baseReward = parseFloat((targetEnrollment.amount_paid * 0.125).toFixed(2));
+
+            const { data: referrerProfile } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', referrerId)
+              .single();
+
+            let actualReward = baseReward;
+
+            // Enforce 50% cap of referrer's own paid course fees for students
+            if (!referrerProfile || referrerProfile.role === 'student') {
+              const { data: referrerEnrollments } = await supabase
+                .from('enrollments')
+                .select('amount_paid')
+                .eq('student_id', referrerId)
+                .eq('payment_status', 'completed');
+
+              const totalPaidByReferrer = (referrerEnrollments || []).reduce((sum: number, e: any) => sum + (e.amount_paid || 0), 0);
+              const maxCap = totalPaidByReferrer * 0.50;
+
+              const { data: referrerRedemptions } = await supabase
+                .from('redemptions')
+                .select('amount')
+                .eq('student_id', referrerId)
+                .eq('status', 'approved');
+
+              const totalRedeemed = (referrerRedemptions || []).reduce((sum: number, r: any) => sum + (r.amount || 0), 0);
+
+              const { data: currentWallet } = await supabase
+                .from('wallets')
+                .select('balance')
+                .eq('student_id', referrerId)
+                .single();
+
+              const currentBal = currentWallet ? currentWallet.balance : 0;
+              const totalEarned = currentBal + totalRedeemed;
+              const remainingCap = Math.max(0, maxCap - totalEarned);
+
+              actualReward = Math.min(baseReward, remainingCap);
+              actualReward = parseFloat(actualReward.toFixed(2));
+            }
+
+            if (actualReward > 0) {
+              const { data: referrerWallet } = await supabase
+                .from('wallets')
+                .select('*')
+                .eq('student_id', referrerId)
+                .single();
+
+              if (referrerWallet) {
+                const newBal = parseFloat((referrerWallet.balance + actualReward).toFixed(2));
+                await supabase
+                  .from('wallets')
+                  .update({ balance: newBal })
+                  .eq('student_id', referrerId);
+              } else {
+                await supabase
+                  .from('wallets')
+                  .insert({
+                    id: crypto.randomUUID(),
+                    student_id: referrerId,
+                    balance: actualReward
+                  });
+              }
+            }
+          }
+          return true;
+        }
+        console.error('Supabase approveEnrollment update error:', error);
+      } else {
+        console.error('Supabase approveEnrollment fetch error:', fetchErr);
+      }
     }
 
     // Local mode manual approval:
@@ -526,60 +608,70 @@ export const db = {
       enrollments[idx].payment_status = 'completed';
       setLocalStorage('univision_enrollments', enrollments);
 
-      // Reward calculation based on referrer role:
+      // Reward calculation with 50% max cap:
       const referredById = enrollments[idx].referred_by_id;
       const amountPaid = enrollments[idx].amount_paid;
       if (referredById) {
         const profilesList = await this.getProfiles();
         const referrer = profilesList.find(p => p.id === referredById);
-        
-        if (referrer) {
-          const wallets = getLocalStorage<Wallet[]>('univision_wallets', []);
-          let referrerWallet = wallets.find(w => w.student_id === referredById);
-          if (!referrerWallet) {
-            referrerWallet = {
-              id: crypto.randomUUID(),
-              student_id: referredById,
-              balance: 0.00
-            };
-            wallets.push(referrerWallet);
-          }
+        const isCore = referrer?.role === 'core';
 
-          let reward = 0.00;
-          if (referrer.role === 'core') {
-            // Core: Limitless 10%
-            reward = amountPaid * 0.10;
-            referrerWallet.balance = parseFloat((referrerWallet.balance + reward).toFixed(2));
-          } else if (referrer.role === 'student') {
-            // Student: 12.5% capped at 50% of cumulative paid course fees
-            const baseReward = amountPaid * 0.125;
-            
-            // Calculate total paid course fees by Student A (completed enrollments)
-            const studentCompleted = enrollments.filter(e => e.student_id === referredById && e.payment_status === 'completed');
-            const totalPaid = studentCompleted.reduce((sum, e) => sum + e.amount_paid, 0);
-            const maxLimit = totalPaid * 0.50;
-            
-            // Calculate total redeemed
-            const redemptions = getLocalStorage<Redemption[]>('univision_redemptions', []);
-            const studentRedemptions = redemptions.filter(r => r.student_id === referredById && r.status === 'approved');
-            const totalRedeemed = studentRedemptions.reduce((sum, r) => sum + r.amount, 0);
-            
-            const totalEarned = referrerWallet.balance + totalRedeemed;
-            
-            if (totalEarned < maxLimit) {
-              reward = baseReward;
-              if (totalEarned + reward > maxLimit) {
-                reward = maxLimit - totalEarned;
-              }
-              referrerWallet.balance = parseFloat((referrerWallet.balance + reward).toFixed(2));
-            }
-          }
+        const wallets = getLocalStorage<Wallet[]>('univision_wallets', []);
+        let referrerWallet = wallets.find(w => w.student_id === referredById);
+        if (!referrerWallet) {
+          referrerWallet = {
+            id: crypto.randomUUID(),
+            student_id: referredById,
+            balance: 0.00
+          };
+          wallets.push(referrerWallet);
+        }
+
+        const baseReward = parseFloat((amountPaid * 0.125).toFixed(2));
+        let actualReward = baseReward;
+
+        if (!isCore) {
+          const studentCompleted = enrollments.filter(e => e.student_id === referredById && e.payment_status === 'completed');
+          const totalPaidByReferrer = studentCompleted.reduce((sum, e) => sum + e.amount_paid, 0);
+          const maxCap = totalPaidByReferrer * 0.50;
+
+          const redemptions = getLocalStorage<Redemption[]>('univision_redemptions', []);
+          const studentRedemptions = redemptions.filter(r => r.student_id === referredById && r.status === 'approved');
+          const totalRedeemed = studentRedemptions.reduce((sum, r) => sum + r.amount, 0);
+
+          const totalEarned = referrerWallet.balance + totalRedeemed;
+          const remainingCap = Math.max(0, maxCap - totalEarned);
+
+          actualReward = Math.min(baseReward, remainingCap);
+          actualReward = parseFloat(actualReward.toFixed(2));
+        }
+
+        if (actualReward > 0) {
+          referrerWallet.balance = parseFloat((referrerWallet.balance + actualReward).toFixed(2));
           setLocalStorage('univision_wallets', wallets);
         }
       }
       return true;
     }
     return false;
+  },
+
+  async getStudentRedemptionCap(studentId: string): Promise<{ totalPaid: number; maxCap: number; totalEarned: number; remainingCap: number }> {
+    const enrollments = await this.getEnrollments(studentId);
+    const completed = enrollments.filter(e => e.payment_status === 'completed');
+    const totalPaid = completed.reduce((sum, e) => sum + e.amount_paid, 0);
+    const maxCap = parseFloat((totalPaid * 0.50).toFixed(2));
+
+    const wallet = await this.getWallet(studentId);
+    const balance = wallet ? wallet.balance : 0;
+
+    const redemptions = await this.getRedemptions(studentId);
+    const approvedRedeemed = redemptions.filter(r => r.status === 'approved').reduce((sum, r) => sum + r.amount, 0);
+
+    const totalEarned = parseFloat((balance + approvedRedeemed).toFixed(2));
+    const remainingCap = Math.max(0, parseFloat((maxCap - totalEarned).toFixed(2)));
+
+    return { totalPaid, maxCap, totalEarned, remainingCap };
   },
 
   async rejectEnrollment(enrollmentId: string): Promise<boolean> {
@@ -699,12 +791,38 @@ export const db = {
 
   async approveRedemption(redemptionId: string): Promise<boolean> {
     if (supabase) {
-      const { error } = await supabase
+      const { data: redemption, error: fetchErr } = await supabase
         .from('redemptions')
-        .update({ status: 'approved', processed_at: new Date().toISOString() })
-        .eq('id', redemptionId);
-      if (!error) return true;
-      console.error('Supabase approveRedemption error:', error);
+        .select('*')
+        .eq('id', redemptionId)
+        .single();
+
+      if (!fetchErr && redemption && redemption.status === 'pending') {
+        const { error } = await supabase
+          .from('redemptions')
+          .update({ status: 'approved', processed_at: new Date().toISOString() })
+          .eq('id', redemptionId);
+
+        if (!error) {
+          const { data: wallet } = await supabase
+            .from('wallets')
+            .select('*')
+            .eq('student_id', redemption.student_id)
+            .single();
+
+          if (wallet) {
+            const newBal = Math.max(0, parseFloat((wallet.balance - redemption.amount).toFixed(2)));
+            await supabase
+              .from('wallets')
+              .update({ balance: newBal })
+              .eq('student_id', redemption.student_id);
+          }
+          return true;
+        }
+        console.error('Supabase approveRedemption update error:', error);
+      } else {
+        console.error('Supabase approveRedemption fetch error:', fetchErr);
+      }
     }
 
     // Local mode:
@@ -715,11 +833,12 @@ export const db = {
       redemption.processed_at = new Date().toISOString();
       setLocalStorage('univision_redemptions', redemptions);
 
-      // Deduct wallet balance to 0 for this student
+      // Deduct wallet balance for this student
       const wallets = getLocalStorage<Wallet[]>('univision_wallets', []);
       const wallet = wallets.find(w => w.student_id === redemption.student_id);
       if (wallet) {
-        wallet.balance = 0.00;
+        const newBal = Math.max(0, parseFloat((wallet.balance - redemption.amount).toFixed(2)));
+        wallet.balance = newBal;
         setLocalStorage('univision_wallets', wallets);
       }
       return true;

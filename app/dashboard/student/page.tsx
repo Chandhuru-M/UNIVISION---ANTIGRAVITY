@@ -35,6 +35,7 @@ export default function StudentDashboard() {
     transaction_id?: string;
   }[]>([]);
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
+  const [redemptionCap, setRedemptionCap] = useState<{ totalPaid: number; maxCap: number; totalEarned: number; remainingCap: number }>({ totalPaid: 0, maxCap: 0, totalEarned: 0, remainingCap: 0 });
   
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -55,6 +56,10 @@ export default function StudentDashboard() {
         // Fetch Wallet
         const wallet = await db.getWallet(currentUser.id);
         if (wallet) setWalletBalance(wallet.balance);
+
+        // Fetch Redemption Cap Info (50% max cap of enrolled course fees)
+        const capInfo = await db.getStudentRedemptionCap(currentUser.id);
+        setRedemptionCap(capInfo);
 
         // Fetch Enrollments
         const enrollments = await db.getEnrollments(currentUser.id);
@@ -84,10 +89,14 @@ export default function StudentDashboard() {
         const redemptionList = await db.getRedemptions(currentUser.id);
         setRedemptions(redemptionList);
 
-        // Calculate count of other students referred by this student
+        // Calculate count of other students referred by this student (approved enrollments)
         const allProfiles = await db.getProfiles();
-        const referred = allProfiles.filter(p => p.referred_by_id === currentUser.id);
-        setReferralsCount(referred.length);
+        const allEnrollments = await db.getEnrollments();
+        const approvedReferredSet = new Set([
+          ...allProfiles.filter(p => p.referred_by_id === currentUser.id).map(p => p.id),
+          ...allEnrollments.filter(e => e.referred_by_id === currentUser.id && e.payment_status === 'completed').map(e => e.student_id)
+        ]);
+        setReferralsCount(approvedReferredSet.size);
 
       } catch (err) {
         console.error('Failed to load dashboard:', err);
@@ -270,23 +279,41 @@ export default function StudentDashboard() {
                   
                   <div className="bg-background p-3 rounded-xl border border-border space-y-3">
                     <div className="flex justify-between items-center">
-                      <span className="text-2xl font-black text-foreground">₹{walletBalance.toFixed(2)}</span>
+                      <div>
+                        <span className="text-2xl font-black text-foreground block">₹{walletBalance.toFixed(2)}</span>
+                        <span className="text-[9px] text-muted-foreground font-semibold">Current Wallet Balance</span>
+                      </div>
+                      <div className="text-right bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+                        <span className="text-[8px] font-bold text-muted-foreground uppercase block">Max Earn Cap (50%)</span>
+                        <span className="text-xs font-black text-emerald-400">₹{redemptionCap.maxCap.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-[9px] text-muted-foreground border-t border-border pt-2 space-y-0.5 font-medium">
+                      <p className="flex justify-between">
+                        <span>Total Paid for Courses:</span>
+                        <span className="font-bold text-foreground">₹{redemptionCap.totalPaid.toFixed(2)}</span>
+                      </p>
+                      <p className="flex justify-between">
+                        <span>Remaining Earning Allowance:</span>
+                        <span className="font-bold text-emerald-400">₹{redemptionCap.remainingCap.toFixed(2)}</span>
+                      </p>
                     </div>
 
                     {walletBalance > 0 && !redemptions.some(r => r.status === 'pending') && (
                       <div className="space-y-1.5 pt-1.5 border-t border-border">
                         <label className="text-[9px] font-black text-muted-foreground block uppercase tracking-wider">
-                          Linked Payment Mobile (GPay/PhonePe)
+                          GPay / UPI Mobile Number
                         </label>
                         <input
-                          type="text"
-                          placeholder="Enter mobile number"
+                          type="tel"
+                          placeholder="Enter GPay number (e.g. 9876543210)"
                           value={redeemPhone}
                           onChange={(e) => setRedeemPhone(e.target.value)}
                           className="w-full bg-card border border-input rounded-lg py-1.5 px-2 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-medium"
                         />
                         <p className="text-[8px] text-muted-foreground leading-relaxed font-semibold">
-                          * Redemptions are credited in 1 to 7 business days.
+                          * Requests are forwarded to Admin. Admin will pay via GPay and approve.
                         </p>
                       </div>
                     )}
@@ -311,7 +338,7 @@ export default function StudentDashboard() {
                         <div key={red.id} className="flex justify-between items-center p-1.5 rounded bg-background border border-border">
                           <div className="flex flex-col text-left">
                             <span className="font-semibold text-foreground">₹{red.amount.toFixed(2)}</span>
-                            <span className="text-[8px] text-muted-foreground">Ph: {red.payment_phone}</span>
+                            <span className="text-[8px] text-muted-foreground">GPay: {red.payment_phone}</span>
                           </div>
                           <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
                             red.status === 'pending'
@@ -338,7 +365,7 @@ export default function StudentDashboard() {
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-foreground">Referral Center</h3>
-                      <p className="text-[10px] text-muted-foreground">Get 25% cash back on friend signups</p>
+                      <p className="text-[10px] text-muted-foreground">Get 12.5% cash back on friend course enrollments</p>
                     </div>
                   </div>
                   

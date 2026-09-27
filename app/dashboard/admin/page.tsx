@@ -1037,7 +1037,7 @@ export default function AdminDashboard() {
                     <div className="space-y-1 text-left">
                       <p className="text-sm font-bold text-white">{red.studentName}</p>
                       <p className="text-xs text-zinc-400">Email: {red.studentEmail}</p>
-                      <p className="text-xs font-mono font-bold text-emerald-400">UPI Phone: {red.payment_phone}</p>
+                      <p className="text-xs font-mono font-bold text-emerald-400">GPay / UPI Mobile: {red.payment_phone}</p>
                       <p className="text-[10px] text-zinc-550">Requested: {red.created_at ? new Date(red.created_at).toLocaleDateString() : 'Today'}</p>
                     </div>
 
@@ -1052,7 +1052,7 @@ export default function AdminDashboard() {
                         disabled={actionLoading}
                         className="px-4 py-2.5 bg-emerald-650 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs cursor-pointer transition-all"
                       >
-                        Approve & Mark Paid
+                        Payment Done / Approved
                       </button>
                     </div>
                   </div>
