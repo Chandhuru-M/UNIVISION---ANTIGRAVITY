@@ -8,10 +8,8 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Logo and About */}
           <div className="col-span-1 md:col-span-1 space-y-4">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-blue-600/10 border border-blue-500/20">
-                <BookOpen className="h-5 w-5 text-blue-400" />
-              </div>
+            <Link href="/" className="flex items-center gap-2.5">
+              <img src="/logo.jpg" alt="Univision Counsel Logo" className="h-8 w-auto rounded-lg object-contain" />
               <span className="text-lg font-bold tracking-tight text-white">
                 Univision<span className="text-blue-500">Counsel</span>
               </span>

@@ -402,6 +402,10 @@ export default function Home() {
                 &amp; many more
               </span>
             </div>
+
+            <p className="text-[11px] text-amber-500/90 dark:text-amber-400/90 font-medium italic mt-3 leading-relaxed">
+              <strong className="font-bold not-italic text-amber-500 dark:text-amber-400">Disclaimer:</strong> Other courses are currently under construction and will be available soon. For now, the courses listed above are the only courses available for enrollment.
+            </p>
           </div>
 
           <div className="lg:col-span-7 bg-card/40 border border-border rounded-3xl p-6 space-y-4 text-left">
