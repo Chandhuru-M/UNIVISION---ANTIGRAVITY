@@ -122,21 +122,21 @@ const INITIAL_COURSES: Course[] = [
 
 const INITIAL_BATCHES: Batch[] = [
   {
-    id: 'b1-webdev',
+    id: '33333333-3333-4333-8333-333333333331',
     course_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
     name: 'Batch Alpha',
     google_meet_link: 'https://meet.google.com/abc-defg-hij',
     start_date: new Date().toISOString().split('T')[0]
   },
   {
-    id: 'b2-webdev',
+    id: '33333333-3333-4333-8333-333333333332',
     course_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
     name: 'Batch Beta',
     google_meet_link: 'https://meet.google.com/xyz-uvwx-yza',
     start_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   },
   {
-    id: 'b1-uiux',
+    id: '33333333-3333-4333-8333-333333333333',
     course_id: 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
     name: 'UI Batch 1',
     google_meet_link: 'https://meet.google.com/fig-ma12-des',
@@ -146,7 +146,7 @@ const INITIAL_BATCHES: Batch[] = [
 
 const INITIAL_MENTORS: Profile[] = [
   {
-    id: 'mentor-1',
+    id: '11111111-1111-4111-8111-111111111111',
     name: 'Mohamed Jaris',
     email: 'jaris@univisioncounsel.com',
     role: 'mentor',
@@ -158,7 +158,7 @@ const INITIAL_MENTORS: Profile[] = [
 
 const INITIAL_ADMINS: Profile[] = [
   {
-    id: 'admin-1',
+    id: '22222222-2222-4222-8222-222222222222',
     name: 'Mohamed Jaris (CEO & Founder)',
     email: 'univisioncounsel@gmail.com',
     role: 'admin',
@@ -317,9 +317,14 @@ export const db = {
           }
         }
 
-        // 2. Pre-sync mentor profile to Supabase if missing
-        if (cleanedMentorId) {
-          const mentorProfile = await this.getProfile(cleanedMentorId);
+        const isUUID = (str?: string | null): boolean => 
+          !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+
+        const validMentorId = isUUID(cleanedMentorId) ? cleanedMentorId : null;
+
+        // 2. Pre-sync mentor profile to Supabase if valid UUID
+        if (validMentorId) {
+          const mentorProfile = await this.getProfile(validMentorId);
           if (mentorProfile) {
             try {
               await supabase.from('profiles').upsert({
@@ -335,7 +340,12 @@ export const db = {
           }
         }
 
-        const { data, error } = await supabase.from('batches').insert(newBatch).select().single();
+        const supabaseBatchPayload = {
+          ...newBatch,
+          mentor_id: validMentorId
+        };
+
+        const { data, error } = await supabase.from('batches').insert(supabaseBatchPayload).select().single();
         if (!error && data) return data as Batch;
         if (error) console.error('Supabase addBatch error:', error.message || JSON.stringify(error));
       } catch (e) {
