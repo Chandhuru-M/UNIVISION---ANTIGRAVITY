@@ -145,7 +145,7 @@ export default function AdminDashboard() {
       const allTeamMeetings = await db.getTeamMeetings();
       setTeamMeetings(allTeamMeetings);
       
-      const activeMentors = allProfiles.filter(p => p.role === 'mentor');
+      const activeMentors = allProfiles.filter(p => p.role === 'mentor' || p.role === 'admin');
       setMentors(activeMentors);
 
       const pendRed = allRedemptions.filter(r => r.status === 'pending');
@@ -1093,175 +1093,93 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              
-              {/* Left Column: Users Directory Table (2/3 width) */}
-              <div className="lg:col-span-2 glass-panel rounded-3xl p-6 border border-zinc-800 space-y-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Registered Profiles</h3>
+            {/* Users Directory Table (Full width) */}
+            <div className="glass-panel rounded-3xl p-6 border border-zinc-800 space-y-4">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Registered Profiles</h3>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b border-zinc-905 text-zinc-500 font-bold uppercase tracking-wider">
-                        <th className="pb-3 pl-2">User Details</th>
-                        <th className="pb-3">Contact & DOB</th>
-                        <th className="pb-3">Role Details</th>
-                        <th className="pb-3 text-right pr-2">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-900">
-                      {profiles
-                        .filter(p => userRoleFilter === 'all' || p.role === userRoleFilter)
-                        .map((profile) => {
-                          const userWallet = wallets.find(w => w.student_id === profile.id);
-                          return (
-                            <tr key={profile.id} className="hover:bg-zinc-900/20 transition-colors">
-                              {/* Name & Email */}
-                              <td className="py-4 pl-2 space-y-0.5">
-                                <p className="font-bold text-white text-sm">{profile.name}</p>
-                                <p className="text-zinc-500 text-xs">{profile.email}</p>
-                              </td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-zinc-905 text-zinc-500 font-bold uppercase tracking-wider">
+                      <th className="pb-3 pl-2">User Details</th>
+                      <th className="pb-3">Contact & DOB</th>
+                      <th className="pb-3">Role Details</th>
+                      <th className="pb-3 text-right pr-2">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-900">
+                    {profiles
+                      .filter(p => userRoleFilter === 'all' || p.role === userRoleFilter)
+                      .map((profile) => {
+                        const userWallet = wallets.find(w => w.student_id === profile.id);
+                        return (
+                          <tr key={profile.id} className="hover:bg-zinc-900/20 transition-colors">
+                            {/* Name & Email */}
+                            <td className="py-4 pl-2 space-y-0.5">
+                              <p className="font-bold text-white text-sm">{profile.name}</p>
+                              <p className="text-zinc-500 text-xs">{profile.email}</p>
+                            </td>
 
-                              {/* DOB & Contact */}
-                              <td className="py-4 space-y-0.5">
-                                <p className="text-zinc-300 font-medium">{profile.contact_number || 'N/A'}</p>
-                                <p className="text-[10px] text-zinc-500">
-                                  DOB: {profile.dob ? new Date(profile.dob).toLocaleDateString() : 'N/A'}
-                                </p>
-                              </td>
+                            {/* DOB & Contact */}
+                            <td className="py-4 space-y-0.5">
+                              <p className="text-zinc-300 font-medium">{profile.contact_number || 'N/A'}</p>
+                              <p className="text-[10px] text-zinc-500">
+                                DOB: {profile.dob ? new Date(profile.dob).toLocaleDateString() : 'N/A'}
+                              </p>
+                            </td>
 
-                              {/* Role & Specific Attributes */}
-                              <td className="py-4 space-y-1">
-                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
-                                  profile.role === 'admin'
-                                    ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                                    : profile.role === 'mentor'
-                                    ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                                    : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                }`}>
-                                  {profile.role}
-                                </span>
+                            {/* Role & Specific Attributes */}
+                            <td className="py-4 space-y-1">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                profile.role === 'admin'
+                                  ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                  : profile.role === 'mentor'
+                                  ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                  : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              }`}>
+                                {profile.role}
+                              </span>
 
-                                {profile.role === 'student' && (
-                                  <div className="space-y-0.5 text-[10px] mt-1">
-                                    <p className="text-zinc-400">Referral ID: <span className="font-bold text-zinc-300 select-all">{profile.referral_code}</span></p>
-                                    <p className="text-emerald-400 font-semibold">Wallet: ₹{userWallet?.balance.toFixed(2) || '0.00'}</p>
-                                  </div>
-                                )}
+                              {profile.role === 'student' && (
+                                <div className="space-y-0.5 text-[10px] mt-1">
+                                  <p className="text-zinc-400">Referral ID: <span className="font-bold text-zinc-300 select-all">{profile.referral_code}</span></p>
+                                  <p className="text-emerald-400 font-semibold">Wallet: ₹{userWallet?.balance.toFixed(2) || '0.00'}</p>
+                                </div>
+                              )}
 
-                                {profile.role === 'mentor' && (
-                                  <p className="text-[10px] text-zinc-400 mt-1">Spec: {profile.specialization}</p>
-                                )}
-                              </td>
+                              {profile.role === 'mentor' && (
+                                <p className="text-[10px] text-zinc-400 mt-1">Spec: {profile.specialization}</p>
+                              )}
+                            </td>
 
-                              <td className="py-4 text-right pr-2">
-                               {profile.role === 'student' ? (
-                                  <div className="flex flex-col sm:flex-row gap-2 justify-end">
-                                    <button
-                                      onClick={() => handlePromoteToMentor(profile.id)}
-                                      disabled={actionLoading}
-                                      className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold cursor-pointer transition-all whitespace-nowrap"
-                                    >
-                                      Promote to Mentor
-                                    </button>
-                                    <button
-                                      onClick={() => handlePromoteToCore(profile.id)}
-                                      disabled={actionLoading}
-                                      className="px-2.5 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold cursor-pointer transition-all whitespace-nowrap"
-                                    >
-                                      Promote to Core
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span className="text-[10px] text-zinc-600 font-medium">No actions</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
-                </div>
+                            <td className="py-4 text-right pr-2">
+                             {profile.role === 'student' ? (
+                                <div className="flex flex-col sm:flex-row gap-2 justify-end">
+                                  <button
+                                    onClick={() => handlePromoteToMentor(profile.id)}
+                                    disabled={actionLoading}
+                                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold cursor-pointer transition-all whitespace-nowrap"
+                                  >
+                                    Promote to Mentor
+                                  </button>
+                                  <button
+                                    onClick={() => handlePromoteToCore(profile.id)}
+                                    disabled={actionLoading}
+                                    className="px-2.5 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold cursor-pointer transition-all whitespace-nowrap"
+                                  >
+                                    Promote to Core
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-zinc-600 font-medium">No actions</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
               </div>
-
-              {/* Right Column: Hire Mentor manually Form (1/3 width) */}
-              <div className="lg:col-span-1 glass-panel rounded-3xl p-6 border border-zinc-800 space-y-6">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <UserPlus className="h-4.5 w-4.5 text-blue-400" />
-                  Hire Mentor Directly
-                </h3>
-
-                <form onSubmit={handleAddMentorSubmit} className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-400">Full Name</label>
-                    <input
-                      type="text"
-                      placeholder="Sarah Connor"
-                      value={newMentorName}
-                      onChange={(e) => setNewMentorName(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-400">Email Address</label>
-                    <input
-                      type="email"
-                      placeholder="sarah@example.com"
-                      value={newMentorEmail}
-                      onChange={(e) => setNewMentorEmail(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-400">Date of Birth</label>
-                    <input
-                      type="date"
-                      value={newMentorDob}
-                      onChange={(e) => setNewMentorDob(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-400">Contact Number</label>
-                    <input
-                      type="tel"
-                      placeholder="9876543210"
-                      value={newMentorPhone}
-                      onChange={(e) => setNewMentorPhone(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-400">Specialization</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Full-Stack Web Development"
-                      value={newMentorSpec}
-                      onChange={(e) => setNewMentorSpec(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
-                      required
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={actionLoading}
-                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer transition-all"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Hire Mentor
-                  </button>
-                </form>
-              </div>
-
             </div>
           </div>
         )}
@@ -1653,19 +1571,7 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-400">Payment QR Image link (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Google Drive image link or QR image URL..."
-                      value={newCourseQrUrl}
-                      onChange={(e) => setNewCourseQrUrl(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
-                    />
-                    <p className="text-[9px] text-zinc-550 leading-relaxed font-semibold">
-                      * Paste Google Drive image link or raw image URL. If left blank, custom UPI QR code is auto-generated.
-                    </p>
-                  </div>
+
 
                   {/* Day Checkboxes */}
                   <div className="space-y-2">
@@ -1743,7 +1649,9 @@ export default function AdminDashboard() {
                     >
                       <option value="" className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">-- No Mentor (Awaiting Assignment) --</option>
                       {mentors.map(m => (
-                        <option key={m.id} value={m.id} className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">{m.name} ({m.specialization})</option>
+                        <option key={m.id} value={m.id} className="bg-zinc-900 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100">
+                          {m.name} ({m.specialization || (m.role === 'admin' ? 'Admin / Lead Mentor' : 'Mentor')})
+                        </option>
                       ))}
                     </select>
                   </div>
