@@ -12,7 +12,7 @@ import {
   ArrowRight,
   Gift
 } from 'lucide-react';
-import { db, Course, Batch, Profile } from '@/lib/db';
+import { db, getDirectImageUrl, Course, Batch, Profile } from '@/lib/db';
 
 function PaymentContent() {
   const router = useRouter();
@@ -58,11 +58,12 @@ function PaymentContent() {
           setCourse(courseData);
           setBatch(batchData);
 
-          // Configure initial QR image source
+          // Configure initial QR image source (supporting Google Drive links)
           const fallbackQr = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
             `upi://pay?pa=univisioncounsel@gmail.com&pn=Univision%20Counsel&am=${courseData.fees}&cu=INR`
           )}`;
-          setQrImageSrc(courseData.qr_code_url && courseData.qr_code_url.trim() !== '' ? courseData.qr_code_url : fallbackQr);
+          const rawQr = courseData.qr_code_url;
+          setQrImageSrc(rawQr && rawQr.trim() !== '' ? getDirectImageUrl(rawQr) : fallbackQr);
 
           // Check if user has a pre-existing referrer code
           if (currentUser.referred_by_id) {

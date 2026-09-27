@@ -1,5 +1,18 @@
 import { supabase } from './supabase';
 
+export function getDirectImageUrl(url?: string | null): string {
+  if (!url || !url.trim()) return '';
+  const trimmed = url.trim();
+
+  // Handle Google Drive share link (e.g. /file/d/FILE_ID/view or ?id=FILE_ID)
+  const driveMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (driveMatch && driveMatch[1]) {
+    return `https://lh3.googleusercontent.com/d/${driveMatch[1]}`;
+  }
+
+  return trimmed;
+}
+
 export interface Course {
   id: string;
   name: string;

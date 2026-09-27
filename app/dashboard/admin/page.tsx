@@ -23,7 +23,7 @@ import {
   ShieldAlert,
   QrCode
 } from 'lucide-react';
-import { db, Course, Batch, Profile, Enrollment, Redemption, Wallet } from '@/lib/db';
+import { db, getDirectImageUrl, Course, Batch, Profile, Enrollment, Redemption, Wallet } from '@/lib/db';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { BarChart, DonutChart } from '@/components/DashboardCharts';
 
@@ -1516,13 +1516,13 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="space-y-1 md:col-span-2">
-                  <label className="text-xs font-semibold text-muted-foreground">Payment QR Code Image URL / UPI Link</label>
+                  <label className="text-xs font-semibold text-muted-foreground">Payment QR Image link</label>
                   <div className="flex gap-2">
                     <input
                       type="text"
                       value={qrEditUrl}
                       onChange={(e) => setQrEditUrl(e.target.value)}
-                      placeholder="https://api.qrserver.com/... or upi://pay?pa=..."
+                      placeholder="https://drive.google.com/file/d/... or custom image URL"
                       className="w-full bg-background border border-border rounded-xl py-2 px-3 text-xs text-foreground focus:outline-none"
                     />
                     <button
@@ -1559,7 +1559,7 @@ export default function AdminDashboard() {
                   <span className="text-xs font-semibold text-muted-foreground">Live QR Preview:</span>
                   <div className="bg-white p-2 rounded-xl border border-border">
                     <img
-                      src={qrEditUrl}
+                      src={getDirectImageUrl(qrEditUrl)}
                       alt="QR Preview"
                       className="h-20 w-20 object-contain"
                       onError={(e) => {
@@ -1654,16 +1654,16 @@ export default function AdminDashboard() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-400">Payment QR URL / UPI ID (Optional)</label>
+                    <label className="text-xs font-semibold text-zinc-400">Payment QR Image link (Optional)</label>
                     <input
                       type="text"
-                      placeholder="e.g. upi://pay?pa=univision@okaxis or custom QR image link"
+                      placeholder="e.g. Google Drive image link or QR image URL..."
                       value={newCourseQrUrl}
                       onChange={(e) => setNewCourseQrUrl(e.target.value)}
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none"
                     />
                     <p className="text-[9px] text-zinc-550 leading-relaxed font-semibold">
-                      * If left blank, the platform automatically generates a custom UPI QR code for student checkouts.
+                      * Paste Google Drive image link or raw image URL. If left blank, custom UPI QR code is auto-generated.
                     </p>
                   </div>
 
