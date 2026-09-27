@@ -447,38 +447,26 @@ export const db = {
     const allEnrollments = await this.getEnrollments();
     const completedCount = allEnrollments.filter(e => e.student_id === studentId && e.payment_status === 'completed').length;
     
-    if (completedCount === 0) {
-      if (referredByCode) {
-        const referrer = await this.getProfileByReferralCode(referredByCode);
-        if (referrer) {
-          if (referrer.id === studentId) {
-            throw new Error('Self referral is prohibited.');
-          }
-          
-          // Strategy C: Directed Graph Cycle Detection
-          const hasCycle = await this.detectReferralCycle(studentId, referrer.id);
-          if (hasCycle) {
-            throw new Error('Invalid referral: cycle detected (closed loops are prohibited).');
-          }
-
-          // Strategy A: Chronological Constraint
-          const studentProfile = await this.getProfile(studentId);
-          if (studentProfile && studentProfile.created_at && referrer.created_at) {
-            const referrerDate = new Date(referrer.created_at).getTime();
-            const studentDate = new Date(studentProfile.created_at).getTime();
-            if (referrerDate >= studentDate) {
-              throw new Error('Invalid referral: referrer account must exist prior to your registration.');
-            }
-          }
-
-          referredById = referrer.id;
+    if (referredByCode) {
+      const referrer = await this.getProfileByReferralCode(referredByCode);
+      if (referrer) {
+        if (referrer.id === studentId) {
+          throw new Error('Self referral is prohibited.');
         }
-      } else {
-        // Fallback to profile's referred_by_id if not overridden
-        const studentProfile = await this.getProfile(studentId);
-        if (studentProfile && studentProfile.referred_by_id) {
-          referredById = studentProfile.referred_by_id;
+        
+        // Strategy C: Directed Graph Cycle Detection
+        const hasCycle = await this.detectReferralCycle(studentId, referrer.id);
+        if (hasCycle) {
+          throw new Error('Invalid referral: cycle detected (closed loops are prohibited).');
         }
+
+        referredById = referrer.id;
+      }
+    } else {
+      // Fallback to profile's referred_by_id if not overridden
+      const studentProfile = await this.getProfile(studentId);
+      if (studentProfile && studentProfile.referred_by_id) {
+        referredById = studentProfile.referred_by_id;
       }
     }
 
