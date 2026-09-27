@@ -15,15 +15,18 @@ export default function Navbar() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
-    const syncUser = () => {
+    const syncUser = async () => {
       const currentUser = db.getCurrentUser();
       setUser(currentUser);
 
-      if (currentUser && (currentUser.role === 'student' || currentUser.role === 'core')) {
-        db.getWallet(currentUser.id).then(wallet => {
+      if (currentUser) {
+        try {
+          const wallet = await db.getWallet(currentUser.id);
           if (wallet) setWalletBalance(wallet.balance);
           else setWalletBalance(0);
-        });
+        } catch (e) {
+          console.error('Navbar wallet fetch error:', e);
+        }
       } else {
         setWalletBalance(null);
       }
@@ -38,7 +41,13 @@ export default function Navbar() {
 
     window.addEventListener('scroll', handleScroll);
     window.addEventListener('univision_auth_change', syncUser);
+    window.addEventListener('univision_data_change', syncUser);
     window.addEventListener('storage', syncUser);
+
+    // Auto-poll every 3 seconds to keep navbar wallet balance 100% in sync with dashboard
+    const intervalId = setInterval(() => {
+      syncUser();
+    }, 3000);
     
     // Initialize Theme
     const savedTheme = localStorage.getItem('univision_theme') as 'light' | 'dark' | null;
@@ -52,7 +61,9 @@ export default function Navbar() {
     return () => {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('univision_auth_change', syncUser);
+      window.removeEventListener('univision_data_change', syncUser);
       window.removeEventListener('storage', syncUser);
+      clearInterval(intervalId);
     };
   }, []);
 
@@ -130,7 +141,7 @@ export default function Navbar() {
 
             {user ? (
               <>
-                {(user.role === 'student' || user.role === 'core') && walletBalance !== null && (
+                {walletBalance !== null && (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card border border-border text-xs font-semibold text-foreground">
                     <WalletIcon className="h-4 w-4 text-emerald-400" />
                     <span>Wallet: ₹{walletBalance.toFixed(2)}</span>
@@ -231,7 +242,7 @@ export default function Navbar() {
 
             {user ? (
               <>
-                {(user.role === 'student' || user.role === 'core') && walletBalance !== null && (
+                {walletBalance !== null && (
                   <div className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-foreground">
                     <WalletIcon className="h-5 w-5 text-emerald-400" />
                     <span>Wallet Balance: ₹{walletBalance.toFixed(2)}</span>
